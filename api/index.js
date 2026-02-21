@@ -1,4 +1,4 @@
-import cheerio from "cheerio";
+const cheerio = require("cheerio");
 
 /* =========================
    VTEX
@@ -29,13 +29,14 @@ async function buscarVTEX(medicamento, loja, dominio) {
         };
       })
       .filter(Boolean);
-  } catch {
+
+  } catch (err) {
     return [];
   }
 }
 
 /* =========================
-   DROGASIL (HTML SCRAPING)
+   DROGASIL
 ========================= */
 async function buscarDrogasil(medicamento) {
   try {
@@ -84,7 +85,8 @@ async function buscarDrogasil(medicamento) {
     });
 
     return resultados;
-  } catch {
+
+  } catch (err) {
     return [];
   }
 }
@@ -92,7 +94,8 @@ async function buscarDrogasil(medicamento) {
 /* =========================
    HANDLER VERCEL
 ========================= */
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
+
   const { remedio } = req.query;
 
   if (!remedio) {
@@ -118,4 +121,4 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "s-maxage=60");
 
   return res.status(200).json(resultados);
-}
+};
