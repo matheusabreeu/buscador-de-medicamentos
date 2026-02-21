@@ -3,7 +3,7 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Função de busca para farmácias VTEX (Extrafarma, Pague Menos e Globo)
+// Função para farmácias VTEX (Extrafarma, Pague Menos e Globo)
 async function buscarFarmacia(medicamento, loja) {
     try {
         const dominios = {
@@ -12,12 +12,12 @@ async function buscarFarmacia(medicamento, loja) {
             'Globo': 'www.drogariaglobo.com.br'
         };
         const termo = encodeURIComponent(medicamento);
-        // Capturamos os primeiros 30 resultados
-        const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}&_from=0&_to=29`;
+        // Capturamos os primeiros 30 resultados para garantir a amostra
+        const url = `https://\${dominios[loja]}/api/catalog_system/pub/products/search?ft=\${termo}&_from=0&_to=29`;
         
         const response = await fetch(url, { 
             headers: { 'Accept': 'application/json' },
-            signal: AbortSignal.timeout(12000) 
+            signal: AbortSignal.timeout(9000) // Timeout de 9s para não derrubar a função da Vercel
         });
         
         if (!response.ok) return [];
@@ -35,7 +35,7 @@ async function buscarFarmacia(medicamento, loja) {
                 nome: p.productName,
                 preco: preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
                 valor: preco,
-                link: `https://${dominios[loja]}${p.link}`,
+                link: \`https://\${dominios[loja]}\${p.link}\`,
                 imagem: item?.images?.[0]?.imageUrl || ''
             };
         }).filter(i => i !== null);
@@ -55,11 +55,11 @@ app.all('*', async (req, res) => {
         if (lojasSelecionadas.includes('Globo')) buscas.push(buscarFarmacia(remedio, 'Globo'));
 
         const tempResults = await Promise.all(buscas);
-        // ORDENAÇÃO GERAL: O menor preço de São Luís aparece primeiro (Eficiência Econômica)
+        // ORDENAÇÃO GERAL: Menor preço de São Luís no topo
         resultados = tempResults.flat().sort((a, b) => a.valor - b.valor);
     }
 
-    res.send(`
+    res.send(\`
     <!DOCTYPE html>
     <html lang="pt-br">
     <head>
@@ -81,7 +81,7 @@ app.all('*', async (req, res) => {
             </header>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
-                <input type="text" name="remedio" value="${remedio}" placeholder="Nome do remédio..." required
+                <input type="text" name="remedio" value="\${remedio}" placeholder="Nome do remédio..." required
                        class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-transparent focus:border-blue-500 transition text-white">
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
@@ -93,12 +93,12 @@ app.all('*', async (req, res) => {
                         </label>
                     </div>
                     <div class="grid grid-cols-2 gap-y-3">
-                        ${['Extrafarma', 'Pague Menos', 'Globo'].map(l => \`
+                        \${['Extrafarma', 'Pague Menos', 'Globo'].map(l => \\\`
                             <label class="flex items-center gap-2 text-xs cursor-pointer">
-                                <input type="checkbox" name="lojas" value="\${l}" \${lojasSelecionadas.includes(l) ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> 
-                                \${l}
+                                <input type="checkbox" name="lojas" value="\\\${l}" \\\${lojasSelecionadas.includes(l) ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> 
+                                \\\${l}
                             </label>
-                        \`).join('')}
+                        \\\`).join('')}
                     </div>
                 </div>
 
@@ -108,26 +108,25 @@ app.all('*', async (req, res) => {
             </form>
 
             <div class="space-y-4">
-                \${resultados.map(r => \`
+                \${resultados.map(r => \\\`
                     <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 hover:border-blue-500/50 transition">
-                        <img src="\${r.imagem}" class="w-14 h-14 rounded-lg bg-white object-contain p-1 shadow-inner">
+                        <img src="\\\${r.imagem}" class="w-14 h-14 rounded-lg bg-white object-contain p-1 shadow-inner">
                         <div class="flex-1 min-w-0">
-                            <h3 class="text-[10px] font-bold text-slate-200 leading-tight uppercase truncate mb-1">\${r.nome}</h3>
+                            <h3 class="text-[10px] font-bold text-slate-200 leading-tight uppercase truncate mb-1">\\\${r.nome}</h3>
                             <div class="flex justify-between items-end">
                                 <div>
-                                    <p class="text-[8px] font-black tracking-tighter \${r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400')} uppercase">\${r.loja}</p>
-                                    <p class="text-green-400 font-mono text-xl font-black leading-none">\${r.preco}</p>
+                                    <p class="text-[8px] font-black tracking-tighter \\\${r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400')} uppercase">\\\${r.loja}</p>
+                                    <p class="text-green-400 font-mono text-xl font-black leading-none">\\\${r.preco}</p>
                                 </div>
-                                <a href="\${r.link}" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700 hover:bg-slate-700 transition">🛒 SITE</a>
+                                <a href="\\\${r.link}" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700 hover:bg-slate-700 transition">🛒 SITE</a>
                             </div>
                         </div>
                     </div>
-                \`).join('')}
-                \${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic font-medium">Nenhum resultado encontrado.</div>' : ''}
+                \\\`).join('')}
             </div>
         </div>
     </body>
-    </html>`);
+    </html>\`);
 });
 
 module.exports = app;
