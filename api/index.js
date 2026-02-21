@@ -3,51 +3,62 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// CONFIGURAÇÃO DE CASHBACK MÉLIUZ ATUALIZADA
-const cashbackMeliuz = {
-    'Extrafarma': { pct: 4, label: '4%', link: 'https://www.meliuz.com.br/desconto/extrafarma' },
-    'Pague Menos': { pct: 8, label: '8%', link: 'https://www.meliuz.com.br/desconto/pague-menos' },
-    'Drogasil': { pct: 3, label: '3%', link: 'https://www.meliuz.com.br/desconto/drogasil' },
-    'Ultrafarma': { pct: 3, label: '3%', link: 'https://www.meliuz.com.br/desconto/ultrafarma' },
-    'Globo': { pct: 0, label: '0%', link: '#' }
+// Slugs do Méliuz para cada farmácia
+const meliuzSlugs = {
+    'Extrafarma': 'extrafarma',
+    'Pague Menos': 'pague-menos',
+    'Drogasil': 'cupom-drogasil',
+    'Ultrafarma': 'ultrafarma'
 };
+
+// FUNÇÃO PARA BUSCAR CASHBACK REAL NO MÉLIUZ
+async function obterCashbackReal(loja) {
+    const slug = meliuzSlugs[loja];
+    if (!slug || slug === '#') return { pct: 0, label: '0%' };
+    
+    try {
+        const url = `https://www.meliuz.com.br/desconto/${slug}`;
+        const response = await fetch(url, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
+            signal: AbortSignal.timeout(5000)
+        });
+        
+        if (!response.ok) throw new Error('Bloqueio Méliuz');
+        const html = await response.text();
+        
+        // Procura o padrão: "Ativar até <span>X%</span>" que você encontrou
+        const regex = /Ativar até <span>(\d+,?\d?)%<\/span>/;
+        const match = html.match(regex);
+        
+        if (match && match[1]) {
+            const valor = match[1].replace(',', '.');
+            return { pct: parseFloat(valor), label: match[1] + '%' };
+        }
+        return { pct: 0, label: 'Ver site' };
+    } catch (e) {
+        // Se falhar, retorna valores base para não quebrar o site
+        const fallback = { 'Extrafarma': '4%', 'Pague Menos': '8%', 'Drogasil': '3%', 'Ultrafarma': '3%' };
+        return { pct: parseFloat(fallback[loja]) || 0, label: fallback[loja] || '0%' };
+    }
+}
 
 async function buscarVTEX(medicamento, loja) {
     try {
-        const dominios = {
-            'Extrafarma': 'www.extrafarma.com.br',
-            'Pague Menos': 'www.paguemenos.com.br',
-            'Globo': 'www.drogariaglobo.com.br'
-        };
-        const termo = encodeURIComponent(medicamento);
-        const url = 'https://' + dominios[loja] + '/api/catalog_system/pub/products/search?ft=' + termo + '&_from=0&_to=15';
-        
-        const response = await fetch(url, { 
-            headers: { 'Accept': 'application/json' },
-            signal: AbortSignal.timeout(10000) 
-        });
-        
-        if (!response.ok) return [];
+        const dominios = { 'Extrafarma': 'www.extrafarma.com.br', 'Pague Menos': 'www.paguemenos.com.br', 'Globo': 'www.drogariaglobo.com.br' };
+        const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(medicamento)}&_from=0&_to=15`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
         const data = await response.json();
-
         return data.map(p => {
-            const item = p.items && p.items[0];
-            const seller = item && item.sellers && item.sellers[0] && item.sellers[0].commertialOffer;
-            const preco = seller && seller.Price;
+            const item = p.items?.[0];
+            const preco = item?.sellers?.[0]?.commertialOffer?.Price;
             if (!preco || preco <= 0) return null;
-            
-            let linkFinal = p.link || "";
-            if (!linkFinal.startsWith('http')) {
-                linkFinal = 'https://' + dominios[loja] + linkFinal;
-            }
-
             return {
                 loja: loja,
                 nome: p.productName,
                 preco: preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
                 valor: preco,
-                link: linkFinal,
-                imagem: (item.images && item.images[0] && item.images[0].imageUrl) || ''
+                link: p.link.startsWith('http') ? p.link : `https://${dominios[loja]}${p.link}`,
+                imagem: item?.images?.[0]?.imageUrl || ''
             };
         }).filter(i => i !== null);
     } catch (e) { return []; }
@@ -58,44 +69,47 @@ app.all('*', async (req, res) => {
     let selecionadas = req.body.lojas || ['Extrafarma', 'Pague Menos', 'Globo'];
     if (!Array.isArray(selecionadas)) selecionadas = [selecionadas];
 
+    // Carrega os Cashbacks dinamicamente no acesso
+    const [cashExtra, cashPague, cashDrog, cashUltra] = await Promise.all([
+        obterCashbackReal('Extrafarma'),
+        obterCashbackReal('Pague Menos'),
+        obterCashbackReal('Drogasil'),
+        obterCashbackReal('Ultrafarma')
+    ]);
+
+    const cashDict = { 'Extrafarma': cashExtra, 'Pague Menos': cashPague, 'Drogasil': cashDrog, 'Ultrafarma': cashUltra, 'Globo': { pct: 0, label: '0%' } };
+
     let resultados = [];
     if (remedio) {
-        const buscas = [];
-        if (selecionadas.includes('Extrafarma')) buscas.push(buscarVTEX(remedio, 'Extrafarma'));
-        if (selecionadas.includes('Pague Menos')) buscas.push(buscarVTEX(remedio, 'Pague Menos'));
-        if (selecionadas.includes('Globo')) buscas.push(buscarVTEX(remedio, 'Globo'));
-
+        const buscas = selecionadas.map(l => buscarVTEX(remedio, l));
         const resTotal = await Promise.all(buscas);
         resultados = resTotal.flat().sort((a, b) => a.valor - b.valor);
     }
 
     let listaHTML = '';
     resultados.forEach((r, index) => {
-        const corLoja = r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400');
-        const pctCash = cashbackMeliuz[r.loja].pct;
-        const valorCashback = (r.valor * (pctCash / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-        const badgeCash = pctCash > 0 
-            ? '<span class="text-[8px] bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-bold ml-2">+' + valorCashback + ' (' + pctCash + '%) de volta</span>' 
-            : '';
+        const info = cashDict[r.loja];
+        const valorCash = (r.valor * (info.pct / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const badge = info.pct > 0 ? `<span class="text-[8px] bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-bold ml-2">+ \${valorCash} (\${info.label}) de volta</span>` : '';
         
-        listaHTML += '<div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 mb-3">' +
-            '<img src="' + r.imagem + '" class="w-12 h-12 rounded-lg bg-white object-contain p-1">' +
-            '<div class="flex-1 min-w-0">' +
-                '<div class="flex justify-between items-start">' +
-                    '<h3 class="text-[10px] font-bold text-slate-200 uppercase truncate">' + r.nome + '</h3>' +
-                    (index === 0 ? '<span class="bg-green-500/20 text-green-400 text-[7px] px-2 py-0.5 rounded-full font-black uppercase">Melhor Preço</span>' : '') +
-                '</div>' +
-                '<div class="flex justify-between items-end mt-1">' +
-                    '<div>' +
-                        '<div class="flex items-center">' +
-                            '<p class="text-[8px] font-black ' + corLoja + ' uppercase tracking-tighter">' + r.loja + '</p>' + badgeCash +
-                        '</div>' +
-                        '<p class="text-green-400 font-mono text-xl font-black mt-1">' + r.preco + '</p>' +
-                    '</div>' +
-                    '<a href="' + r.link + '" target="_blank" class="bg-blue-600 px-4 py-2 rounded-xl text-[9px] font-bold text-white shadow-lg shadow-blue-900/40 uppercase">Comprar</a>' +
-                '</div>' +
-            '</div>' +
-        '</div>';
+        listaHTML += `<div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 mb-3">
+            <img src="\${r.imagem}" class="w-12 h-12 rounded-lg bg-white object-contain p-1">
+            <div class="flex-1 min-w-0">
+                <div class="flex justify-between items-start">
+                    <h3 class="text-[10px] font-bold text-slate-200 uppercase truncate">\${r.nome}</h3>
+                    \${index === 0 ? '<span class="bg-green-500/20 text-green-400 text-[7px] px-2 py-0.5 rounded-full font-black uppercase">Melhor Preço</span>' : ''}
+                </div>
+                <div class="flex justify-between items-end mt-1">
+                    <div>
+                        <div class="flex items-center">
+                            <p class="text-[8px] font-black uppercase tracking-tighter">\${r.loja}</p>\${badge}
+                        </div>
+                        <p class="text-green-400 font-mono text-xl font-black mt-1">\${r.preco}</p>
+                    </div>
+                    <a href="\${r.link}" target="_blank" class="bg-blue-600 px-4 py-2 rounded-xl text-[9px] font-bold text-white uppercase">Comprar</a>
+                </div>
+            </div>
+        </div>`;
     });
 
     res.send(`
@@ -107,11 +121,7 @@ app.all('*', async (req, res) => {
         <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💊</text></svg>">
         <script src="https://cdn.tailwindcss.com"></script>
         <title>Buscador de Medicamentos</title>
-        <script>
-            function toggleAll(m) {
-                document.getElementsByName('lojas').forEach(c => c.checked = m.checked);
-            }
-        </script>
+        <script>function toggleAll(m){document.getElementsByName('lojas').forEach(c=>c.checked=m.checked);}</script>
     </head>
     <body class="bg-slate-950 text-white p-4 font-sans">
         <div class="max-w-md mx-auto">
@@ -120,36 +130,8 @@ app.all('*', async (req, res) => {
                 <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1 font-bold italic">Melhores descontos para a Família Abreu</p>
             </header>
 
-            <div class="mb-6">
-                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-2 text-center">Cashback Méliuz Hoje</h4>
-                <div class="grid grid-cols-2 gap-2 mb-3">
-                    <a href="${cashbackMeliuz['Extrafarma'].link}" target="_blank" class="bg-blue-900/10 border border-blue-800/30 p-2 rounded-xl text-center">
-                        <p class="text-[7px] text-blue-400 font-bold uppercase">Extrafarma</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Extrafarma'].label}</p>
-                    </a>
-                    <a href="${cashbackMeliuz['Pague Menos'].link}" target="_blank" class="bg-red-900/10 border border-red-800/30 p-2 rounded-xl text-center">
-                        <p class="text-[7px] text-red-400 font-bold uppercase">Pague Menos</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Pague Menos'].label}</p>
-                    </a>
-                    <a href="${cashbackMeliuz['Drogasil'].link}" target="_blank" class="bg-green-900/10 border border-green-800/30 p-2 rounded-xl text-center">
-                        <p class="text-[7px] text-green-400 font-bold uppercase">Drogasil</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Drogasil'].label}</p>
-                    </a>
-                    <a href="${cashbackMeliuz['Ultrafarma'].link}" target="_blank" class="bg-yellow-900/10 border border-yellow-800/30 p-2 rounded-xl text-center">
-                        <p class="text-[7px] text-yellow-500 font-bold uppercase">Ultrafarma</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Ultrafarma'].label}</p>
-                    </a>
-                </div>
-                <div class="bg-slate-900/50 p-4 rounded-2xl border border-slate-800 text-center shadow-inner">
-                    <p class="text-slate-400 text-[9px] leading-relaxed uppercase font-medium">
-                        <span class="text-yellow-500 font-black">Como ativar:</span> 1. Clique em uma farmácia acima e ative o cashback no Méliuz. 2. Volte aqui e busque seu remédio. 3. Finalize a compra na aba que você ativou. 
-                        <br><span class="text-white/40 italic mt-1 block">* Drogaria Globo não possui cashback no momento.</span>
-                    </p>
-                </div>
-            </div>
-
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
-                <input type="text" name="remedio" value="${remedio}" placeholder="Nome do remédio..." required
+                <input type="text" name="remedio" value="\${remedio}" placeholder="Nome do remédio..." required
                        class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-transparent focus:border-blue-500 transition text-white">
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
@@ -160,9 +142,9 @@ app.all('*', async (req, res) => {
                         </label>
                     </div>
                     <div class="grid grid-cols-2 gap-y-4">
-                        <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Extrafarma" ${selecionadas.includes('Extrafarma') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> Extrafarma</label>
-                        <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Pague Menos" ${selecionadas.includes('Pague Menos') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-red-600"> Pague Menos</label>
-                        <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Globo" ${selecionadas.includes('Globo') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-orange-500"> Globo</label>
+                        <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Extrafarma" \${selecionadas.includes('Extrafarma') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> Extrafarma</label>
+                        <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Pague Menos" \${selecionadas.includes('Pague Menos') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-red-600"> Pague Menos</label>
+                        <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Globo" \${selecionadas.includes('Globo') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-orange-500"> Globo</label>
                         
                         <div class="flex flex-col opacity-40">
                            <label class="flex items-center gap-2 text-xs italic cursor-not-allowed">
@@ -179,7 +161,35 @@ app.all('*', async (req, res) => {
                 <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition active:scale-95 shadow-lg shadow-blue-900/40 uppercase">🔍 Buscar Menor Preço</button>
             </form>
 
-            <div class="space-y-4">${listaHTML}</div>
+            <div class="space-y-4 mb-10">\${listaHTML}</div>
+
+            <div class="mt-12 pt-6 border-t border-slate-800">
+                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-3 text-center">Cashback Méliuz (Instruções)</h4>
+                <div class="bg-slate-900/80 p-5 rounded-3xl border border-slate-800 mb-6 text-center">
+                    <p class="text-yellow-500 text-[10px] font-black uppercase mb-2">⚠️ Como Ativar:</p>
+                    <p class="text-slate-400 text-[9px] uppercase font-bold leading-tight">Clique em uma farmácia abaixo, ative o cashback no Méliuz e volte aqui para finalizar a compra.</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <a href="\${cashExtra.link}" class="bg-slate-900 p-3 rounded-2xl border border-slate-800 text-center">
+                        <p class="text-[7px] text-slate-500 uppercase">Extrafarma</p>
+                        <p class="text-xs font-black">\${cashExtra.label}</p>
+                    </a>
+                    <a href="\${cashPague.link}" class="bg-slate-900 p-3 rounded-2xl border border-slate-800 text-center">
+                        <p class="text-[7px] text-slate-500 uppercase">Pague Menos</p>
+                        <p class="text-xs font-black">\${cashPague.label}</p>
+                    </a>
+                    <a href="\${cashDrog.link}" class="bg-slate-900 p-3 rounded-2xl border border-slate-800 text-center">
+                        <p class="text-[7px] text-slate-500 uppercase">Drogasil</p>
+                        <p class="text-xs font-black">\${cashDrog.label}</p>
+                    </a>
+                    <a href="\${cashUltra.link}" class="bg-slate-900 p-3 rounded-2xl border border-slate-800 text-center">
+                        <p class="text-[7px] text-slate-500 uppercase">Ultrafarma</p>
+                        <p class="text-xs font-black">\${cashUltra.label}</p>
+                    </a>
+                </div>
+                <p class="text-center text-[7px] text-slate-600 mt-4 italic uppercase">* Globo sem cashback. Valores atualizados automaticamente do Méliuz.</p>
+            </div>
         </div>
     </body>
     </html>`);
