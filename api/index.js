@@ -3,15 +3,16 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Função de busca para Extrafarma e Pague Menos
+// Função de busca para farmácias do sistema VTEX
 async function buscarFarmacia(medicamento, loja) {
     try {
         const dominios = {
             'Extrafarma': 'www.extrafarma.com.br',
-            'Pague Menos': 'www.paguemenos.com.br'
+            'Pague Menos': 'www.paguemenos.com.br',
+            'Globo': 'www.drogariasglobo.com.br'
         };
         const termo = encodeURIComponent(medicamento);
-        // Captura 30 produtos para garantir uma boa amostra de mercado
+        // Captura 30 produtos de cada rede para uma amostra robusta
         const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}&_from=0&_to=29`;
         
         const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
@@ -38,9 +39,9 @@ async function buscarFarmacia(medicamento, loja) {
 }
 
 app.all('*', async (req, res) => {
-    // Aceita busca via formulário (body) ou link (query)
     const remedio = req.body?.remedio || req.query?.q || '';
-    let lojasSelecionadas = req.body?.lojas || ['Extrafarma', 'Pague Menos'];
+    // Mantém as 3 farmácias selecionadas por padrão
+    let lojasSelecionadas = req.body?.lojas || ['Extrafarma', 'Pague Menos', 'Globo'];
     if (!Array.isArray(lojasSelecionadas)) lojasSelecionadas = [lojasSelecionadas];
 
     let resultados = [];
@@ -48,9 +49,10 @@ app.all('*', async (req, res) => {
         const buscas = [];
         if (lojasSelecionadas.includes('Extrafarma')) buscas.push(buscarFarmacia(remedio, 'Extrafarma'));
         if (lojasSelecionadas.includes('Pague Menos')) buscas.push(buscarFarmacia(remedio, 'Pague Menos'));
+        if (lojasSelecionadas.includes('Globo')) buscas.push(buscarFarmacia(remedio, 'Globo'));
 
         const tempResults = await Promise.all(buscas);
-        // ORDENAÇÃO ECONÔMICA: Sempre o menor preço no topo
+        // PRIORIDADE ECONÔMICA: Ordenação rigorosa pelo menor preço da lista geral
         resultados = tempResults.flat().sort((a, b) => a.valor - b.valor);
     }
 
@@ -72,7 +74,7 @@ app.all('*', async (req, res) => {
         <div class="max-w-md mx-auto">
             <header class="text-center py-6">
                 <h1 class="text-3xl font-bold text-blue-500 italic">Buscador Abreu 💊</h1>
-                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1">Sargento F Abreu | Economia UFMA</p>
+                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1 font-bold">Sargento F Abreu | Economia UFMA</p>
             </header>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
@@ -81,13 +83,13 @@ app.all('*', async (req, res) => {
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
                     <div class="flex justify-between items-center mb-4">
-                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Filtro de Redes</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Onde pesquisar?</span>
                         <label class="flex items-center gap-1 text-[10px] font-bold text-blue-400 cursor-pointer">
                             <input type="checkbox" onclick="selecionarTodas(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
                             MARCAR TODAS
                         </label>
                     </div>
-                    <div class="grid grid-cols-2 gap-y-3">
+                    <div class="grid grid-cols-1 gap-y-2">
                         <label class="flex items-center gap-2 text-xs cursor-pointer">
                             <input type="checkbox" name="lojas" value="Extrafarma" ${lojasSelecionadas.includes('Extrafarma') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> 
                             Extrafarma
@@ -95,6 +97,10 @@ app.all('*', async (req, res) => {
                         <label class="flex items-center gap-2 text-xs cursor-pointer">
                             <input type="checkbox" name="lojas" value="Pague Menos" ${lojasSelecionadas.includes('Pague Menos') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-red-600"> 
                             Pague Menos
+                        </label>
+                        <label class="flex items-center gap-2 text-xs cursor-pointer">
+                            <input type="checkbox" name="lojas" value="Globo" ${lojasSelecionadas.includes('Globo') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-orange-500"> 
+                            Drogarias Globo
                         </label>
                     </div>
                 </div>
@@ -112,7 +118,7 @@ app.all('*', async (req, res) => {
                             <h3 class="text-[10px] font-bold text-slate-200 leading-tight uppercase truncate mb-1">${r.nome}</h3>
                             <div class="flex justify-between items-end">
                                 <div>
-                                    <p class="text-[8px] font-black tracking-tighter ${r.loja === 'Extrafarma' ? 'text-blue-400' : 'text-red-400'} uppercase">${r.loja}</p>
+                                    <p class="text-[8px] font-black tracking-tighter ${r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400')} uppercase">${r.loja}</p>
                                     <p class="text-green-400 font-mono text-xl font-black leading-none">${r.preco}</p>
                                 </div>
                                 <a href="${r.link}" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700 hover:bg-slate-700 transition">🛒 SITE</a>
@@ -120,7 +126,7 @@ app.all('*', async (req, res) => {
                         </div>
                     </div>
                 `).join('')}
-                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic font-medium">Nenhum resultado encontrado para as farmácias selecionadas.</div>' : ''}
+                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic font-medium">Nenhum resultado encontrado. Tente ajustar o nome.</div>' : ''}
             </div>
         </div>
     </body>
