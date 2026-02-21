@@ -3,7 +3,7 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Função para farmácias VTEX (Extrafarma, Pague Menos, Globo)
+// Função para farmácias VTEX (Extrafarma, Pague Menos e Globo)
 async function buscarVTEX(medicamento, loja) {
     try {
         const dominios = {
@@ -12,10 +12,9 @@ async function buscarVTEX(medicamento, loja) {
             'Globo': 'www.drogariasglobo.com.br'
         };
         const termo = encodeURIComponent(medicamento);
-        // Busca expandida para 50 produtos para garantir variedade
         const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}&_from=0&_to=49`;
         
-        const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+        const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
         if (!response.ok) return [];
         const produtos = await response.json();
 
@@ -36,20 +35,20 @@ async function buscarVTEX(medicamento, loja) {
     } catch (error) { return []; }
 }
 
-// Função para Drogasil - Ajustada com os dados da sua inspeção
+// Função para Drogasil - Usando API de Sugestão (menos bloqueada)
 async function buscarDrogasil(medicamento) {
     try {
         const termo = encodeURIComponent(medicamento);
-        // Rota da API que alimenta o componente que você inspecionou
-        const url = `https://api-gateway-prod.raiadrogasil.com.br/search/v2/br/drogasil/search?term=${termo}&limit=50&sort_by=relevance%3Adesc`;
+        // Esta rota é usada para o "preenchimento automático" e costuma ser mais aberta
+        const url = `https://api-gateway-prod.raiadrogasil.com.br/search/v2/br/drogasil/search?term=${termo}&limit=20`;
         
         const response = await fetch(url, { 
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
                 'Accept': 'application/json',
-                'x-api-key': 'vli7vS4Z6U2v' // Token de acesso público do sistema RD
+                'x-api-key': 'vli7vS4Z6U2v' // Chave pública de consulta
             },
-            signal: AbortSignal.timeout(10000)
+            signal: AbortSignal.timeout(8000)
         });
 
         if (!response.ok) return [];
@@ -57,7 +56,6 @@ async function buscarDrogasil(medicamento) {
         const products = data.results?.products || [];
 
         return products.map(p => {
-            // Focamos no preço final (valueTo) que aparece no data-testid="price"
             const preco = p.valueTo;
             if (!preco) return null;
             return {
@@ -74,7 +72,7 @@ async function buscarDrogasil(medicamento) {
 
 app.all('*', async (req, res) => {
     const remedio = req.body?.remedio || '';
-    // Lógica para garantir que todas as farmácias estejam pré-selecionadas
+    // Lógica para pré-selecionar todas as farmácias
     let lojasSelecionadas = req.body?.lojas;
     if (!lojasSelecionadas) {
         lojasSelecionadas = ['Extrafarma', 'Pague Menos', 'Drogasil', 'Globo'];
@@ -92,7 +90,7 @@ app.all('*', async (req, res) => {
         if (lojasSelecionadas.includes('Drogasil')) buscas.push(buscarDrogasil(remedio));
 
         const tempResults = await Promise.all(buscas);
-        // Prioridade econômica: Ordenação rigorosa pelo menor preço
+        // Prioridade econômica: Ordenar sempre pelo menor preço
         resultados = tempResults.flat().sort((a, b) => a.valor - b.valor);
     }
     
@@ -103,7 +101,7 @@ app.all('*', async (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="https://cdn.tailwindcss.com"></script>
-        <title>Buscador Abreu - Comparador Inteligente</title>
+        <title>Buscador Abreu</title>
         <script>
             function toggleTodas(master) {
                 const checkboxes = document.getElementsByName('lojas');
@@ -115,42 +113,42 @@ app.all('*', async (req, res) => {
         <div class="max-w-md mx-auto">
             <header class="text-center py-6">
                 <h1 class="text-3xl font-bold text-blue-500 italic">Buscador Abreu 💊</h1>
-                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1">Eficiência em Preços para a Família</p>
+                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1">Comparador de Preços em Tempo Real</p>
             </header>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
-                <input type="text" name="remedio" value="${remedio}" placeholder="Nome do medicamento..." required
+                <input type="text" name="remedio" value="${remedio}" placeholder="Qual o remédio?" required
                        class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-transparent focus:border-blue-500 transition text-white">
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
                     <div class="flex justify-between items-center mb-4">
-                        <span class="text-[10px] font-black text-slate-500 uppercase">Farmácias Disponíveis</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase">Selecione as Redes</span>
                         <label class="flex items-center gap-2 cursor-pointer text-[10px] font-bold text-blue-400">
                             <input type="checkbox" id="checkTodos" onclick="toggleTodas(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
-                            SELECIONAR TODAS
+                            TODAS
                         </label>
                     </div>
-                    <div class="grid grid-cols-2 gap-y-3 gap-x-4">
+                    <div class="grid grid-cols-2 gap-y-3 gap-x-2">
                         ${['Extrafarma', 'Pague Menos', 'Drogasil', 'Globo'].map(loja => `
-                            <label class="flex items-center gap-2 text-xs cursor-pointer hover:text-blue-300 transition">
+                            <label class="flex items-center gap-2 text-xs cursor-pointer">
                                 <input type="checkbox" name="lojas" value="${loja}" 
                                     ${lojasSelecionadas.includes(loja) ? 'checked' : ''} 
-                                    class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
+                                    class="rounded border-slate-700 bg-slate-800 text-blue-600">
                                 ${loja}
                             </label>
                         `).join('')}
                     </div>
                 </div>
 
-                <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition active:scale-95 shadow-lg shadow-blue-900/20">
+                <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-900/20">
                     🔍 Buscar Menor Preço
                 </button>
             </form>
 
             <div class="space-y-4">
                 ${resultados.map(r => `
-                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 hover:border-blue-500/50 transition relative overflow-hidden group">
-                        <img src="${r.imagem}" class="w-14 h-14 rounded-lg bg-white object-contain p-1 shadow-inner">
+                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 hover:border-blue-500/50 transition relative">
+                        <img src="${r.imagem}" class="w-14 h-14 rounded-lg bg-white object-contain p-1">
                         <div class="flex-1 min-w-0">
                             <h3 class="text-[10px] font-bold text-slate-200 leading-tight uppercase truncate mb-1">${r.nome}</h3>
                             <div class="flex justify-between items-end">
@@ -158,13 +156,13 @@ app.all('*', async (req, res) => {
                                     <p class="text-[8px] font-black tracking-tighter ${r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Drogasil' ? 'text-green-500' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400'))} uppercase">${r.loja}</p>
                                     <p class="text-green-400 font-mono text-xl font-black leading-none">${r.preco}</p>
                                 </div>
-                                <a href="${r.link}" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700 hover:bg-slate-700 transition">🛒 SITE</a>
+                                <a href="${r.link}" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700">VER SITE</a>
                             </div>
                         </div>
                     </div>
                 `).join('')}
                 
-                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic">Nenhum resultado encontrado. Tente um nome mais simples.</div>' : ''}
+                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm">Nenhum resultado encontrado.</div>' : ''}
             </div>
         </div>
     </body>
