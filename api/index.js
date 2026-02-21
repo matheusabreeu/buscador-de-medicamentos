@@ -1,4 +1,4 @@
-const cheerio = require("cheerio");
+import cheerio from "cheerio";
 
 /* =========================
    VTEX
@@ -8,33 +8,34 @@ async function buscarVTEX(medicamento, loja, dominio) {
     const termo = encodeURIComponent(medicamento);
     const url = `https://${dominio}/api/catalog_system/pub/products/search?ft=${termo}&_from=0&_to=20`;
 
-    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const response = await fetch(url);
     if (!response.ok) return [];
 
     const produtos = await response.json();
 
-    return produtos.map(p => {
-      const item = p.items?.[0];
-      const preco = item?.sellers?.[0]?.commertialOffer?.Price;
+    return produtos
+      .map(p => {
+        const item = p.items?.[0];
+        const preco = item?.sellers?.[0]?.commertialOffer?.Price;
 
-      if (!preco || preco <= 0) return null;
+        if (!preco || preco <= 0) return null;
 
-      return {
-        loja,
-        nome: p.productName,
-        preco,
-        link: p.link,
-        imagem: item?.images?.[0]?.imageUrl || ""
-      };
-    }).filter(Boolean);
-
+        return {
+          loja,
+          nome: p.productName,
+          preco,
+          link: p.link,
+          imagem: item?.images?.[0]?.imageUrl || ""
+        };
+      })
+      .filter(Boolean);
   } catch {
     return [];
   }
 }
 
 /* =========================
-   DROGASIL (HTML)
+   DROGASIL (HTML SCRAPING)
 ========================= */
 async function buscarDrogasil(medicamento) {
   try {
@@ -45,8 +46,7 @@ async function buscarDrogasil(medicamento) {
       headers: {
         "User-Agent": "Mozilla/5.0",
         "Accept-Language": "pt-BR,pt;q=0.9"
-      },
-      signal: AbortSignal.timeout(10000)
+      }
     });
 
     if (!response.ok) return [];
@@ -84,7 +84,6 @@ async function buscarDrogasil(medicamento) {
     });
 
     return resultados;
-
   } catch {
     return [];
   }
@@ -93,19 +92,13 @@ async function buscarDrogasil(medicamento) {
 /* =========================
    HANDLER VERCEL
 ========================= */
-module.exports = async (req, res) => {
-
-  const remedio = req.method === "POST"
-    ? req.body?.remedio
-    : req.query?.remedio;
+export default async function handler(req, res) {
+  const { remedio } = req.query;
 
   if (!remedio) {
-    return res.status(200).send(`
-      <form method="GET">
-        <input name="remedio" placeholder="Digite o medicamento" required/>
-        <button>Buscar</button>
-      </form>
-    `);
+    return res.status(200).json({
+      mensagem: "Use ?remedio=nome_do_medicamento"
+    });
   }
 
   const promessas = [
@@ -124,5 +117,5 @@ module.exports = async (req, res) => {
 
   res.setHeader("Cache-Control", "s-maxage=60");
 
-  res.status(200).json(resultados);
-};
+  return res.status(200).json(resultados);
+}
