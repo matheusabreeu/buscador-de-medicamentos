@@ -3,11 +3,11 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// CONFIGURAÇÃO DE CASHBACK ATUALIZADA (Valores reais informados por você)
+// CONFIGURAÇÃO DE CASHBACK MÉLIUZ
 const cashbackMeliuz = {
     'Extrafarma': { pct: 4, label: '4%', link: 'https://www.meliuz.com.br/desconto/extrafarma' },
     'Pague Menos': { pct: 8, label: '8%', link: 'https://www.meliuz.com.br/desconto/pague-menos' },
-    'Globo': { pct: 0, label: '0%', link: '#' } // Removido conforme sua inspeção
+    'Globo': { pct: 0, label: '0%', link: '#' }
 };
 
 async function buscarVTEX(medicamento, loja) {
@@ -71,12 +71,11 @@ app.all('*', async (req, res) => {
     resultados.forEach((r, index) => {
         const corLoja = r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400');
         
-        // CÁLCULO DE CASHBACK EM REAIS
         const pctCash = cashbackMeliuz[r.loja].pct;
         const valorCashback = (r.valor * (pctCash / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
         
         const badgeCashback = pctCash > 0 
-            ? '<span class="text-[8px] bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-bold ml-2">+' + valorCashback + ' de volta</span>' 
+            ? '<span class="text-[8px] bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-bold ml-2">+' + valorCashback + ' (' + pctCash + '%) de volta</span>' 
             : '';
         
         listaHTML += '<div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 mb-3 hover:border-blue-500/30 transition">' +
@@ -93,7 +92,7 @@ app.all('*', async (req, res) => {
                         '</div>' +
                         '<p class="text-green-400 font-mono text-xl font-black mt-1">' + r.preco + '</p>' +
                     '</div>' +
-                    '<a href="' + r.link + '" target="_blank" class="bg-blue-600 px-3 py-2 rounded-xl text-[9px] font-bold text-white shadow-lg shadow-blue-900/40">COMPRAR</a>' +
+                    '<a href="' + r.link + '" target="_blank" class="bg-blue-600 px-3 py-2 rounded-xl text-[9px] font-bold text-white shadow-lg shadow-blue-900/40 uppercase">Comprar</a>' +
                 '</div>' +
             '</div>' +
         '</div>';
@@ -122,8 +121,8 @@ app.all('*', async (req, res) => {
             </header>
 
             <div class="mb-6">
-                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-2 text-center">Painel Méliuz (Cashback Ativo)</h4>
-                <div class="grid grid-cols-2 gap-2">
+                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-2 text-center">Cashback Méliuz Ativo</h4>
+                <div class="grid grid-cols-2 gap-2 mb-3">
                     <a href="${cashbackMeliuz['Extrafarma'].link}" target="_blank" class="bg-blue-900/10 border border-blue-800/30 p-2 rounded-xl text-center hover:bg-blue-900/20 transition">
                         <p class="text-[7px] text-blue-400 font-bold uppercase">Extrafarma</p>
                         <p class="text-sm font-black text-white">${cashbackMeliuz['Extrafarma'].label}</p>
@@ -133,6 +132,11 @@ app.all('*', async (req, res) => {
                         <p class="text-sm font-black text-white">${cashbackMeliuz['Pague Menos'].label}</p>
                     </a>
                 </div>
+                <div class="bg-slate-900/50 p-3 rounded-xl border border-slate-800 text-center">
+                    <p class="text-slate-400 text-[9px] leading-relaxed uppercase font-medium">
+                        <span class="text-yellow-500 font-black">Como ativar:</span> Clique no botão da farmácia acima, ative o dinheiro de volta no site do parceiro e depois retorne aqui para realizar sua busca.
+                    </p>
+                </div>
             </div>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
@@ -141,20 +145,26 @@ app.all('*', async (req, res) => {
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
                     <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-2">
-                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Filtro</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest text-xs">Filtro Regional</span>
                         <label class="flex items-center gap-1 text-[10px] font-bold text-blue-400 cursor-pointer uppercase">
                             <input type="checkbox" onclick="toggleAll(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0"> Todas
                         </label>
                     </div>
-                    <div class="grid grid-cols-2 gap-y-3">
+                    <div class="grid grid-cols-2 gap-y-4">
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Extrafarma" ${selecionadas.includes('Extrafarma') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> Extrafarma</label>
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Pague Menos" ${selecionadas.includes('Pague Menos') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-red-600"> Pague Menos</label>
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Globo" ${selecionadas.includes('Globo') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-orange-500"> Globo</label>
-                        <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-green-500 font-bold mt-1 underline">Drogasil (Manual) →</a>
+                        
+                        <div class="flex flex-col">
+                           <label class="flex items-center gap-2 text-xs opacity-40 cursor-not-allowed italic">
+                               <input type="checkbox" disabled class="rounded border-slate-700 bg-slate-800"> Drogasil
+                           </label>
+                           <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-green-500 font-black mt-1 underline tracking-tighter uppercase italic">Busca Manual →</a>
+                        </div>
                     </div>
                 </div>
 
-                <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition active:scale-95 shadow-lg shadow-blue-900/40">🔍 Buscar Menor Preço</button>
+                <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition active:scale-95 shadow-lg shadow-blue-900/40 uppercase">🔍 Buscar Menor Preço</button>
             </form>
 
             <div class="space-y-4">${listaHTML}</div>
