@@ -3,12 +3,16 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Função para buscar no estoque digital da Extrafarma
-async function buscarExtrafarma(medicamento) {
+// Função genérica para buscar em farmácias que usam o sistema VTEX (Extrafarma e Pague Menos)
+async function buscarFarmacia(medicamento, loja) {
     try {
         const termo = encodeURIComponent(medicamento);
-        // Link direto para a base de dados da Extrafarma
-        const url = `https://www.extrafarma.com.br/api/catalog_system/pub/products/search?ft=${termo}`;
+        const dominios = {
+            'Extrafarma': 'www.extrafarma.com.br',
+            'Pague Menos': 'www.paguemenos.com.br'
+        };
+        
+        const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}`;
         
         const response = await fetch(url);
         if (!response.ok) return [];
@@ -19,13 +23,14 @@ async function buscarExtrafarma(medicamento) {
             const item = p.items[0];
             const preco = item.sellers[0].commertialOffer.Price;
             return {
+                loja: loja,
                 nome: p.productName,
                 preco: preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
                 valor: preco,
                 link: p.link,
                 imagem: item.images[0]?.imageUrl || ''
             };
-        }).sort((a, b) => a.valor - b.valor); // Ordenação Econômica: Menor preço primeiro
+        });
     } catch (error) {
         return [];
     }
@@ -33,7 +38,18 @@ async function buscarExtrafarma(medicamento) {
 
 app.all('*', async (req, res) => {
     const remedio = req.body?.remedio || '';
-    const resultados = remedio ? await buscarExtrafarma(remedio) : [];
+    let resultados = [];
+    
+    if (remedio) {
+        // Executa as duas buscas ao mesmo tempo para ganhar agilidade
+        const [resExtra, resPague] = await Promise.all([
+            buscarFarmacia(remedio, 'Extrafarma'),
+            buscarFarmacia(remedio, 'Pague Menos')
+        ]);
+        
+        // Une os resultados e ordena pelo menor preço (Eficiência Econômica)
+        resultados = [...resExtra, ...resPague].sort((a, b) => a.valor - b.valor);
+    }
     
     res.send(`
     <!DOCTYPE html>
@@ -42,34 +58,41 @@ app.all('*', async (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="https://cdn.tailwindcss.com"></script>
-        <title>Busca Extrafarma</title>
+        <title>Comparador de Preços - Abreu</title>
     </head>
     <body class="bg-slate-950 text-white font-sans p-4">
         <div class="max-w-md mx-auto">
             <header class="text-center py-8">
-                <h1 class="text-3xl font-bold text-blue-500">Extrafarma Online 💊</h1>
-                <p class="text-slate-500 text-sm italic font-medium">Economia Familiar Abreu</p>
+                <h1 class="text-3xl font-bold text-blue-500">Buscador Abreu 💊</h1>
+                <p class="text-slate-500 text-sm italic font-medium">Extrafarma + Pague Menos | UFMA</p>
             </header>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
-                <input type="text" name="remedio" value="${remedio}" placeholder="Nome do remédio (ex: Dorflex)..." required
+                <input type="text" name="remedio" value="${remedio}" placeholder="Nome do remédio..." required
                        class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-transparent focus:border-blue-500 transition text-white">
                 <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition">
-                    Pesquisar na Extrafarma
+                    Comparar Preços Reais
                 </button>
             </form>
 
             <div class="space-y-4">
                 ${resultados.length > 0 ? resultados.map(r => `
-                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4">
+                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 hover:border-blue-500 transition">
                         ${r.imagem ? `<img src="${r.imagem}" class="w-16 h-16 rounded-lg bg-white object-contain">` : ''}
                         <div class="flex-1">
-                            <h3 class="text-sm font-bold leading-tight text-slate-200">${r.nome}</h3>
-                            <p class="text-green-400 font-mono text-xl mt-1 font-bold">${r.preco}</p>
-                            <a href="${r.link}" target="_blank" class="text-[10px] text-blue-400 underline mt-2 block italic">Ver no site oficial →</a>
+                            <div class="flex justify-between items-start">
+                                <h3 class="text-[12px] font-bold leading-tight text-slate-200">${r.nome}</h3>
+                            </div>
+                            <div class="flex justify-between items-end mt-2">
+                                <div>
+                                    <p class="text-[10px] font-bold ${r.loja === 'Extrafarma' ? 'text-blue-400' : 'text-red-400'} uppercase">${r.loja}</p>
+                                    <p class="text-green-400 font-mono text-xl font-bold">${r.preco}</p>
+                                </div>
+                                <a href="${r.link}" target="_blank" class="bg-slate-800 px-3 py-1 rounded-lg text-[10px] text-blue-400 hover:bg-slate-700">🛒 Comprar</a>
+                            </div>
                         </div>
                     </div>
-                `).join('') : (remedio ? '<p class="text-center text-red-400">Nenhum resultado encontrado. Tente outro nome.</p>' : '')}
+                `).join('') : (remedio ? '<p class="text-center text-red-400">Nenhum resultado nas duas farmácias.</p>' : '')}
             </div>
         </div>
     </body>
