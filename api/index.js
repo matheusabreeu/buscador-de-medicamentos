@@ -12,7 +12,8 @@ async function buscarFarmacia(medicamento, loja) {
             'Pague Menos': 'www.paguemenos.com.br'
         };
         
-        const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}`;
+        // Adicionamos &_from=0&_to=49 para pegar os primeiros 50 produtos
+        const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}&_from=0&_to=49`;
         
         const response = await fetch(url);
         if (!response.ok) return [];
