@@ -159,7 +159,7 @@ app.all('*', async (req, res) => {
                         </div>
                     </div>
                 `).join('')}
-                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic">Aguardando resposta das farmácias... Tente novamente em alguns segundos.</div>' : ''}
+                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic">Nenhum resultado encontrado. Tente novamente em alguns segundos.</div>' : ''}
             </div>
         </div>
     </body>
