@@ -41,52 +41,44 @@ async function buscarVTEX(medicamento, loja, dominio) {
 async function buscarDrogasil(medicamento) {
   try {
     const termo = encodeURIComponent(medicamento);
-    const url = `https://www.drogasil.com.br/search?w=${termo}`;
+
+    const url = `https://api-gateway-prod.raiadrogasil.com.br/search/v2/br/drogasil/search?term=${termo}&limit=20&offset=0`;
 
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "pt-BR,pt;q=0.9"
+        "accept": "application/json",
+        "x-api-key": "rd-site",
+        "user-agent": "Mozilla/5.0"
       }
     });
 
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.log("Erro Drogasil:", response.status);
+      return [];
+    }
 
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    const data = await response.json();
 
-    let resultados = [];
+    const produtos = data?.results?.products || [];
 
-    $("li.product-item").each((i, el) => {
-      const nome = $(el).find(".product-item__name").text().trim();
-      const precoTexto = $(el).find(".price").first().text().trim();
-      const linkRel = $(el).find("a").attr("href");
-      const imagem = $(el).find("img").attr("src");
+    return produtos
+      .map(produto => {
+        const preco = produto?.price?.finalPrice;
 
-      if (!precoTexto || !linkRel) return;
+        if (!preco) return null;
 
-      const preco = parseFloat(
-        precoTexto
-          .replace("R$", "")
-          .replace(/\./g, "")
-          .replace(",", ".")
-          .trim()
-      );
+        return {
+          loja: "Drogasil",
+          nome: produto.name,
+          preco: Number(preco),
+          link: `https://www.drogasil.com.br${produto.url}`,
+          imagem: produto.images?.[0]?.url || ""
+        };
+      })
+      .filter(Boolean);
 
-      if (!preco) return;
-
-      resultados.push({
-        loja: "Drogasil",
-        nome,
-        preco,
-        link: `https://www.drogasil.com.br${linkRel}`,
-        imagem
-      });
-    });
-
-    return resultados;
-
-  } catch (err) {
+  } catch (erro) {
+    console.log("Erro ao buscar Drogasil:", erro);
     return [];
   }
 }
