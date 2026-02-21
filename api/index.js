@@ -3,7 +3,6 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Configuração de Cashback Méliuz (Ajustado com os dados que você buscou)
 const meliuzSlugs = {
     'Extrafarma': 'extrafarma',
     'Pague Menos': 'cupom-pague-menos',
@@ -15,7 +14,6 @@ async function obterCashbackReal(loja) {
     const slug = meliuzSlugs[loja];
     if (!slug) return { pct: 0, label: '0%', link: '#' };
     const linkMeliuz = 'https://www.meliuz.com.br/desconto/' + slug;
-    
     try {
         const response = await fetch(linkMeliuz, {
             headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' },
@@ -24,14 +22,13 @@ async function obterCashbackReal(loja) {
         const html = await response.text();
         const regex = /Ativar\s*(?:até\s*)?<span>([\d,]+)%<\/span>/i;
         const match = html.match(regex);
-
+        
         if (match && match[1]) {
             const prefixo = html.toLowerCase().includes('até') ? 'Até ' : '';
             return { pct: parseFloat(match[1].replace(',', '.')), label: prefixo + match[1] + '%', link: linkMeliuz };
         }
         return { pct: 0, label: 'Ver site', link: linkMeliuz };
     } catch (e) {
-        const falls = { 'Extrafarma': '2,5%', 'Pague Menos': '8%', 'Drogasil': 'Até 3%', 'Ultrafarma': 'Até 3%' };
         const falls = { 'Extrafarma': '2,5%', 'Pague Menos': '8%', 'Drogasil': 'Até 3%', 'Ultrafarma': '3%' };
         return { pct: parseFloat(falls[loja]) || 0, label: falls[loja] || '0%', link: linkMeliuz };
     }
@@ -47,7 +44,6 @@ async function buscarFarmacia(medicamento, loja) {
         const url = 'https://' + dominios[loja] + '/api/catalog_system/pub/products/search?ft=' + encodeURIComponent(medicamento) + '&_from=0&_to=15';
         const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
         const data = await response.json();
-        
         return data.map(p => {
             const item = p.items && p.items[0];
             const price = item?.sellers && item.sellers[0]?.commertialOffer?.Price;
@@ -91,7 +87,6 @@ app.all('*', async (req, res) => {
             const info = cashDict[r.loja] || { pct: 0, label: '0%' };
             const vCash = (r.valor * (info.pct / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             const cor = r.loja === 'Extrafarma' ? 'text-cyan-400' : (r.loja === 'Drogaria Globo' ? 'text-orange-400' : 'text-red-400');
-            listaHTML += '<div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex items-center gap-4 mb-3 shadow-xl hover:border-cyan-500/30 transition">' +
             
             // ALTERAÇÃO DA FRASE PARA CLAREZA: "+ R$ X,XX de volta"
             listaHTML += '<div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex items-center gap-4 mb-3 hover:border-cyan-500/30 transition shadow-xl">' +
@@ -104,7 +99,6 @@ app.all('*', async (req, res) => {
                     '<div class="flex justify-between items-end mt-1">' +
                         '<div>' +
                             '<div class="flex items-center"><p class="text-[8px] font-black ' + cor + ' uppercase tracking-tighter">' + r.loja + '</p>' +
-                            (info.pct > 0 ? '<span class="text-[8px] text-emerald-400 font-bold ml-2">+' + vCash + ' (' + info.label + ')</span>' : '') + '</div>' +
                             (info.pct > 0 ? '<span class="text-[8px] text-emerald-400 font-bold ml-2">+ ' + vCash + ' de volta (' + info.label + ')</span>' : '') + '</div>' +
                             '<p class="text-white font-mono text-xl font-black mt-1 leading-none">' + r.preco + '</p>' +
                         '</div>' +
@@ -188,7 +182,6 @@ app.all('*', async (req, res) => {
                     </a>
                 </div>
                 <div class="bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/20 text-center shadow-inner">
-                    <p class="text-emerald-400 text-[10px] font-black uppercase mb-1">Como Ativar:</p>
                     <p class="text-emerald-400 text-[10px] font-black uppercase mb-1">Passo a Passo:</p>
                     <p class="text-slate-400 text-[8px] uppercase font-bold leading-tight">1. Clique na rede acima. 2. Ative o cashback no Méliuz. 3. Volte aqui e busque o remédio.</p>
                 </div>
