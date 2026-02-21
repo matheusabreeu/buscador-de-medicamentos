@@ -31,7 +31,6 @@ async function obterCashbackReal(loja) {
         }
         return { pct: 0, label: 'Ver site', link: linkMeliuz };
     } catch (e) {
-        // Fallbacks seguros caso o Méliuz bloqueie o acesso temporariamente
         const falls = { 'Extrafarma': '2,5%', 'Pague Menos': '8%', 'Drogasil': 'Até 3%', 'Ultrafarma': '3%' };
         return { pct: parseFloat(falls[loja]) || 0, label: falls[loja] || '0%', link: linkMeliuz };
     }
@@ -45,7 +44,6 @@ async function buscarFarmacia(medicamento, loja) {
             'Drogaria Globo': 'www.drogariaglobo.com.br'
         };
         const url = 'https://' + dominios[loja] + '/api/catalog_system/pub/products/search?ft=' + encodeURIComponent(medicamento) + '&_from=0&_to=15';
-        
         const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
         const data = await response.json();
         
@@ -54,7 +52,6 @@ async function buscarFarmacia(medicamento, loja) {
             const offer = item && item.sellers && item.sellers[0] && item.sellers[0].commertialOffer;
             const price = offer && offer.Price;
             if (!price || price <= 0) return null;
-            
             return {
                 loja: loja,
                 nome: p.productName,
@@ -72,7 +69,6 @@ app.all('*', async (req, res) => {
     let selecionadas = req.body.lojas || ['Extrafarma', 'Pague Menos', 'Drogaria Globo'];
     if (!Array.isArray(selecionadas)) selecionadas = [selecionadas];
 
-    // Busca Cashback simultânea
     const [cEx, cPa, cDr, cUl] = await Promise.all([
         obterCashbackReal('Extrafarma'), obterCashbackReal('Pague Menos'),
         obterCashbackReal('Drogasil'), obterCashbackReal('Ultrafarma')
@@ -89,13 +85,12 @@ app.all('*', async (req, res) => {
     let listaHTML = '';
     if (q && resultados.length === 0) {
         listaHTML = '<div class="text-center p-12 bg-slate-900 rounded-3xl border border-white/5 shadow-2xl">' +
-                    '<p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">⚠️ Nenhum medicamento encontrado para "' + q + '" nas redes ativas.</p></div>';
+                    '<p class="text-slate-400 font-bold uppercase text-[10px] tracking-widest">⚠️ Nenhum medicamento encontrado nas redes automáticas para "' + q + '".</p></div>';
     } else {
         resultados.forEach((r, idx) => {
             const info = cashDict[r.loja] || { pct: 0, label: '0%' };
             const vCash = (r.valor * (info.pct / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             const cor = r.loja === 'Extrafarma' ? 'text-cyan-400' : (r.loja === 'Drogaria Globo' ? 'text-orange-400' : 'text-red-400');
-            
             listaHTML += '<div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex items-center gap-4 mb-3 hover:border-cyan-500/30 transition shadow-xl">' +
                 '<img src="' + r.imagem + '" class="w-12 h-12 rounded-lg bg-white object-contain p-1 shadow-inner">' +
                 '<div class="flex-1 min-w-0">' +
@@ -133,7 +128,7 @@ app.all('*', async (req, res) => {
                 <a href="/" class="inline-block hover:scale-105 transition-transform duration-200">
                     <h1 class="text-3xl font-black text-cyan-500 italic uppercase tracking-tighter">Buscador de Medicamentos 💊</h1>
                 </a>
-                <p class="text-emerald-500 text-[10px] uppercase tracking-widest mt-1 font-bold">Melhores descontos para a Família Abreu</p>
+                <p class="text-emerald-500 text-[10px] uppercase tracking-widest mt-1 font-bold italic">Melhores descontos para a Família Abreu</p>
             </header>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-white/10 shadow-2xl mb-8">
@@ -142,7 +137,7 @@ app.all('*', async (req, res) => {
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-white/5">
                     <div class="flex justify-between items-center mb-4 border-b border-white/5 pb-2">
-                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Redes Ativas</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Filtro Regional</span>
                         <label class="flex items-center gap-1 text-[10px] font-bold text-cyan-400 cursor-pointer">
                             <input type="checkbox" onclick="toggleAll(this)" checked class="rounded bg-slate-800 border-white/10 text-cyan-500 focus:ring-0"> TODAS
                         </label>
@@ -153,12 +148,21 @@ app.all('*', async (req, res) => {
                         <label class="flex items-center gap-2 text-xs cursor-pointer"><input type="checkbox" name="lojas" value="Drogaria Globo" ${selecionadas.includes('Drogaria Globo') ? 'checked' : ''} class="rounded bg-slate-800 border-white/10 text-orange-500"> Drogaria Globo</label>
                         
                         <div class="flex flex-col opacity-40 grayscale pointer-events-none">
-                           <label class="flex items-center gap-2 text-xs italic"><input type="checkbox" disabled class="rounded border-white/10"> Drogasil / Ultra</label>
+                           <label class="flex items-center gap-2 text-xs italic"><input type="checkbox" disabled class="rounded border-white/10"> Drogasil</label>
+                        </div>
+                        
+                        <div class="flex flex-col opacity-40 grayscale pointer-events-none">
+                           <label class="flex items-center gap-2 text-xs italic"><input type="checkbox" disabled class="rounded border-white/10"> Ultrafarma</label>
                         </div>
                     </div>
-                    <div class="mt-4 pt-4 border-t border-white/5 flex justify-center gap-4">
-                        <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-emerald-500 font-black underline uppercase">Drogasil Manual →</a>
-                        <a href="https://www.ultrafarma.com.br" target="_blank" class="text-[8px] text-emerald-500 font-black underline uppercase">Ultrafarma Manual →</a>
+                    
+                    <div class="mt-4 pt-4 border-t border-white/5 grid grid-cols-2 gap-4">
+                        <div class="text-center">
+                            <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-emerald-500 font-black underline uppercase">Drogasil Manual →</a>
+                        </div>
+                        <div class="text-center">
+                            <a href="https://www.ultrafarma.com.br" target="_blank" class="text-[8px] text-emerald-500 font-black underline uppercase">Ultrafarma Manual →</a>
+                        </div>
                     </div>
                 </div>
                 <button type="submit" class="w-full bg-cyan-600 p-4 rounded-2xl font-black uppercase text-xs shadow-lg shadow-cyan-900/40 hover:bg-cyan-500 transition active:scale-95">🔍 Buscar Menor Preço</button>
@@ -187,10 +191,10 @@ app.all('*', async (req, res) => {
                     </a>
                 </div>
                 <div class="bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/20 text-center shadow-inner">
-                    <p class="text-emerald-400 text-[10px] font-black uppercase mb-1">Como Ativar:</p>
-                    <p class="text-slate-400 text-[8px] uppercase font-bold leading-tight">1. Clique na rede acima. 2. Ative o cashback no Méliuz. 3. Volte aqui e busque o remédio.</p>
+                    <p class="text-emerald-400 text-[10px] font-black uppercase mb-1">Nota de Instrução:</p>
+                    <p class="text-slate-400 text-[8px] uppercase font-bold leading-tight">1. Ative o cashback acima. 2. Realize a busca. 3. Finalize na mesma janela do Méliuz.</p>
                 </div>
-                <p class="text-center text-[7px] text-slate-600 mt-6 italic uppercase tracking-widest font-bold">Drogaria Globo: Sem cashback ativo no momento.</p>
+                <p class="text-center text-[7px] text-slate-600 mt-6 italic uppercase tracking-widest font-bold">Drogaria Globo: Atualmente sem cashback dinâmico.</p>
             </div>
         </div>
     </body>
