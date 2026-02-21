@@ -1,7 +1,11 @@
 {
   "name": "buscador-de-medicamentos",
   "version": "1.0.0",
+  "engines": {
+    "node": "18.x"
+  },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "cheerio": "^1.0.0-rc.12"
   }
 }
