@@ -3,7 +3,7 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Função para farmácias VTEX (Extrafarma, Pague Menos e Globo)
+// Função para farmácias VTEX (Extrafarma, Pague Menos, Globo)
 async function buscarVTEX(medicamento, loja) {
     try {
         const dominios = {
@@ -35,36 +35,43 @@ async function buscarVTEX(medicamento, loja) {
     } catch (error) { return []; }
 }
 
-// Função para Drogasil - Usando API de Sugestão (menos bloqueada)
+// Função para Drogasil - Tentativa de "Bypass" com novos cabeçalhos
 async function buscarDrogasil(medicamento) {
     try {
         const termo = encodeURIComponent(medicamento);
-        // Esta rota é usada para o "preenchimento automático" e costuma ser mais aberta
-        const url = `https://api-gateway-prod.raiadrogasil.com.br/search/v2/br/drogasil/search?term=${termo}&limit=20`;
+        const url = `https://api-gateway-prod.raiadrogasil.com.br/search/v2/br/drogasil/search?term=${termo}&limit=50&sort_by=relevance%3Adesc`;
         
         const response = await fetch(url, { 
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Accept': 'application/json',
-                'x-api-key': 'vli7vS4Z6U2v' // Chave pública de consulta
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'x-api-key': 'vli7vS4Z6U2v',
+                'Origin': 'https://www.drogasil.com.br',
+                'Referer': 'https://www.drogasil.com.br/',
+                'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"'
             },
-            signal: AbortSignal.timeout(8000)
+            signal: AbortSignal.timeout(10000)
         });
 
         if (!response.ok) return [];
         const data = await response.json();
-        const products = data.results?.products || [];
+        
+        // A Drogasil pode retornar os produtos em diferentes chaves
+        const products = data.results?.products || data.products || [];
 
         return products.map(p => {
-            const preco = p.valueTo;
+            const preco = p.valueTo || p.price?.valueTo;
             if (!preco) return null;
             return {
                 loja: 'Drogasil',
-                nome: p.name,
+                nome: p.name || p.productName,
                 preco: preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
                 valor: preco,
-                link: `https://www.drogasil.com.br/${p.urlKey}.html`,
-                imagem: p.image
+                link: p.urlKey ? `https://www.drogasil.com.br/${p.urlKey}.html` : '#',
+                imagem: p.image || p.thumbnail
             };
         }).filter(item => item !== null);
     } catch (error) { return []; }
@@ -72,8 +79,9 @@ async function buscarDrogasil(medicamento) {
 
 app.all('*', async (req, res) => {
     const remedio = req.body?.remedio || '';
-    // Lógica para pré-selecionar todas as farmácias
     let lojasSelecionadas = req.body?.lojas;
+    
+    // Se nada for selecionado ou vier como string única, transformamos em array
     if (!lojasSelecionadas) {
         lojasSelecionadas = ['Extrafarma', 'Pague Menos', 'Drogasil', 'Globo'];
     } else if (!Array.isArray(lojasSelecionadas)) {
@@ -90,7 +98,6 @@ app.all('*', async (req, res) => {
         if (lojasSelecionadas.includes('Drogasil')) buscas.push(buscarDrogasil(remedio));
 
         const tempResults = await Promise.all(buscas);
-        // Prioridade econômica: Ordenar sempre pelo menor preço
         resultados = tempResults.flat().sort((a, b) => a.valor - b.valor);
     }
     
@@ -122,10 +129,10 @@ app.all('*', async (req, res) => {
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
                     <div class="flex justify-between items-center mb-4">
-                        <span class="text-[10px] font-black text-slate-500 uppercase">Selecione as Redes</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase font-bold tracking-wider">Redes</span>
                         <label class="flex items-center gap-2 cursor-pointer text-[10px] font-bold text-blue-400">
                             <input type="checkbox" id="checkTodos" onclick="toggleTodas(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
-                            TODAS
+                            SELECIONAR TODAS
                         </label>
                     </div>
                     <div class="grid grid-cols-2 gap-y-3 gap-x-2">
@@ -140,23 +147,23 @@ app.all('*', async (req, res) => {
                     </div>
                 </div>
 
-                <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-900/20">
+                <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-900/20 active:scale-95">
                     🔍 Buscar Menor Preço
                 </button>
             </form>
 
             <div class="space-y-4">
                 ${resultados.map(r => `
-                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 hover:border-blue-500/50 transition relative">
-                        <img src="${r.imagem}" class="w-14 h-14 rounded-lg bg-white object-contain p-1">
+                    <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-3 hover:border-blue-500/50 transition">
+                        <img src="${r.imagem}" class="w-12 h-12 rounded bg-white object-contain p-1">
                         <div class="flex-1 min-w-0">
                             <h3 class="text-[10px] font-bold text-slate-200 leading-tight uppercase truncate mb-1">${r.nome}</h3>
                             <div class="flex justify-between items-end">
                                 <div>
                                     <p class="text-[8px] font-black tracking-tighter ${r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Drogasil' ? 'text-green-500' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400'))} uppercase">${r.loja}</p>
-                                    <p class="text-green-400 font-mono text-xl font-black leading-none">${r.preco}</p>
+                                    <p class="text-green-400 font-mono text-lg font-black leading-none">${r.preco}</p>
                                 </div>
-                                <a href="${r.link}" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700">VER SITE</a>
+                                <a href="${r.link}" target="_blank" class="bg-slate-800 px-3 py-1.5 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700">VER SITE</a>
                             </div>
                         </div>
                     </div>
