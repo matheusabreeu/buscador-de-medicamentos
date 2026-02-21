@@ -3,11 +3,14 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// CONFIGURAÇÃO DE CASHBACK (Edite as porcentagens aqui)
-const cashbackInfo = {
-    'Extrafarma': { porcentagem: '4%', link: 'https://www.meliuz.com.br/desconto/extrafarma' },
-    'Pague Menos': { porcentagem: '2,5%', link: 'https://www.cuponomia.com.br/desconto/pague-menos' },
-    'Globo': { porcentagem: '3%', link: 'https://www.meliuz.com.br/desconto/drogaria-globo' }
+// Informações de Cashback (Centralizadas no Méliuz para evitar confusão)
+const cashbackConfig = {
+    descricao: "Cashback é o seu dinheiro de volta! Ao comprar pelo link do parceiro (como Méliuz), uma parte do valor pago retorna para sua conta bancária após a confirmação da compra.",
+    lojas: {
+        'Extrafarma': { pct: '4%', link: 'https://www.meliuz.com.br/desconto/extrafarma' },
+        'Pague Menos': { pct: '2,5%', link: 'https://www.meliuz.com.br/desconto/pague-menos' },
+        'Globo': { pct: '3%', link: 'https://www.meliuz.com.br/desconto/drogaria-globo' }
+    }
 };
 
 async function buscarVTEX(medicamento, loja) {
@@ -18,7 +21,7 @@ async function buscarVTEX(medicamento, loja) {
             'Globo': 'www.drogariaglobo.com.br'
         };
         const termo = encodeURIComponent(medicamento);
-        const url = 'https://' + dominios[loja] + '/api/catalog_system/pub/products/search?ft=' + termo + '&_from=0&_to=20';
+        const url = 'https://' + dominios[loja] + '/api/catalog_system/pub/products/search?ft=' + termo + '&_from=0&_to=15';
         
         const response = await fetch(url, { 
             headers: { 'Accept': 'application/json' },
@@ -34,7 +37,6 @@ async function buscarVTEX(medicamento, loja) {
             const preco = seller && seller.Price;
             if (!preco || preco <= 0) return null;
             
-            // CORREÇÃO DE LINKS DUPLICADOS
             let linkFinal = p.link || "";
             if (!linkFinal.startsWith('http')) {
                 linkFinal = 'https://' + dominios[loja] + linkFinal;
@@ -68,27 +70,28 @@ app.all('*', async (req, res) => {
         resultados = resTotal.flat().sort((a, b) => a.valor - b.valor);
     }
 
-    // MONTAGEM SEGURA DO HTML (EVITA O ERRO 500)
     let listaHTML = '';
     resultados.forEach((r, index) => {
         const corLoja = r.loja === 'Extrafarma' ? 'text-blue-400' : (r.loja === 'Globo' ? 'text-orange-500' : 'text-red-400');
-        const badgeMelhor = index === 0 ? '<span class="bg-green-500/20 text-green-400 text-[8px] px-2 py-0.5 rounded-full font-black ml-2 uppercase tracking-tighter">Campeão de Economia</span>' : '';
-        const cashbackLoja = cashbackInfo[r.loja] ? '<span class="text-[8px] bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-bold ml-2">+' + cashbackInfo[r.loja].porcentagem + ' Cashback</span>' : '';
+        const badgeCashback = '<span class="text-[8px] bg-yellow-500/10 text-yellow-500 px-2 py-0.5 rounded-full font-bold ml-2">+' + cashbackConfig.lojas[r.loja].pct + ' Cashback</span>';
         
-        listaHTML += '<div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 hover:border-blue-500/30 transition">' +
-            '<img src="' + r.imagem + '" class="w-14 h-14 rounded-lg bg-white object-contain p-1">' +
+        listaHTML += '<div class="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center gap-4 mb-3">' +
+            '<img src="' + r.imagem + '" class="w-12 h-12 rounded-lg bg-white object-contain p-1">' +
             '<div class="flex-1 min-w-0">' +
                 '<div class="flex justify-between items-start">' +
-                    '<h3 class="text-[10px] font-bold text-slate-200 uppercase truncate">' + r.nome + '</h3>' + badgeMelhor +
+                    '<h3 class="text-[10px] font-bold text-slate-200 uppercase truncate">' + r.nome + '</h3>' +
                 '</div>' +
                 '<div class="flex justify-between items-end mt-1">' +
                     '<div>' +
                         '<div class="flex items-center">' +
-                            '<p class="text-[8px] font-black ' + corLoja + ' uppercase tracking-tighter">' + r.loja + '</p>' + cashbackLoja +
+                            '<p class="text-[8px] font-black ' + corLoja + ' uppercase tracking-tighter">' + r.loja + '</p>' + badgeCashback +
                         '</div>' +
-                        '<p class="text-green-400 font-mono text-xl font-black mt-1">' + r.preco + '</p>' +
+                        '<p class="text-green-400 font-mono text-lg font-black mt-1">' + r.preco + '</p>' +
                     '</div>' +
-                    '<a href="' + r.link + '" target="_blank" class="bg-slate-800 px-3 py-2 rounded-xl text-[9px] font-bold text-blue-400 border border-slate-700">🛒 IR AO SITE</a>' +
+                    '<div class="flex gap-1">' +
+                        '<a href="' + cashbackConfig.lojas[r.loja].link + '" target="_blank" class="bg-yellow-600/20 px-2 py-2 rounded-xl text-[8px] font-bold text-yellow-500 border border-yellow-600/30">ATIVAR CASHBACK</a>' +
+                        '<a href="' + r.link + '" target="_blank" class="bg-blue-600 px-3 py-2 rounded-xl text-[9px] font-bold text-white shadow-lg shadow-blue-900/40">COMPRAR</a>' +
+                    '</div>' +
                 '</div>' +
             '</div>' +
         '</div>';
@@ -101,7 +104,7 @@ app.all('*', async (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="https://cdn.tailwindcss.com"></script>
-        <title>Buscador Abreu</title>
+        <title>Buscador FA</title>
         <script>
             function toggleAll(m) {
                 document.getElementsByName('lojas').forEach(c => c.checked = m.checked);
@@ -111,23 +114,13 @@ app.all('*', async (req, res) => {
     <body class="bg-slate-950 text-white p-4 font-sans">
         <div class="max-w-md mx-auto">
             <header class="text-center py-6">
-                <h1 class="text-3xl font-bold text-blue-500 italic">Buscador Abreu 💊</h1>
-                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1 font-bold italic">Sargento F Abreu | Inteligência Econômica UFMA</p>
+                <h1 class="text-3xl font-bold text-blue-500 italic">Buscador de medicamentos FA 💊</h1>
+                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1 font-bold">Melhores descontos para a Família Abreu</p>
             </header>
 
-            <div class="grid grid-cols-3 gap-2 mb-6 text-center">
-                <div class="bg-blue-900/20 border border-blue-800 p-2 rounded-xl">
-                    <p class="text-[7px] text-blue-400 font-black uppercase">Extrafarma</p>
-                    <p class="text-xs font-bold">${cashbackInfo['Extrafarma'].porcentagem}</p>
-                </div>
-                <div class="bg-red-900/20 border border-red-800 p-2 rounded-xl">
-                    <p class="text-[7px] text-red-400 font-black uppercase">Pague Menos</p>
-                    <p class="text-xs font-bold">${cashbackInfo['Pague Menos'].porcentagem}</p>
-                </div>
-                <div class="bg-orange-900/20 border border-orange-800 p-2 rounded-xl">
-                    <p class="text-[7px] text-orange-400 font-black uppercase">Globo</p>
-                    <p class="text-xs font-bold">${cashbackInfo['Globo'].porcentagem}</p>
-                </div>
+            <div class="bg-yellow-500/5 border border-yellow-500/20 p-4 rounded-2xl mb-6">
+                <h4 class="text-yellow-500 text-[10px] font-black uppercase mb-1">Como economizar com Cashback?</h4>
+                <p class="text-slate-400 text-[9px] leading-relaxed">${cashbackConfig.descricao}</p>
             </div>
 
             <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
@@ -136,7 +129,7 @@ app.all('*', async (req, res) => {
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
                     <div class="flex justify-between items-center mb-4 border-b border-slate-800 pb-2">
-                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Farmácias</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase">Farmácias</span>
                         <label class="flex items-center gap-1 text-[10px] font-bold text-blue-400 cursor-pointer uppercase">
                             <input type="checkbox" onclick="toggleAll(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0"> Todas
                         </label>
@@ -145,14 +138,17 @@ app.all('*', async (req, res) => {
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Extrafarma" ${selecionadas.includes('Extrafarma') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> Extrafarma</label>
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Pague Menos" ${selecionadas.includes('Pague Menos') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-red-600"> Pague Menos</label>
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Globo" ${selecionadas.includes('Globo') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-orange-500"> Globo</label>
-                        <label class="flex items-center gap-2 text-xs opacity-50"><input type="checkbox" name="lojas" value="Drogasil" ${selecionadas.includes('Drogasil') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-green-600"> Drogasil <span class="text-[7px] ml-1 px-1 bg-slate-700 rounded uppercase">Testes</span></label>
+                        <div class="flex flex-col">
+                           <label class="flex items-center gap-2 text-xs opacity-50"><input type="checkbox" disabled class="rounded border-slate-700 bg-slate-800"> Drogasil</label>
+                           <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-green-500 font-bold mt-1 underline">Acessar Manualmente →</a>
+                        </div>
                     </div>
                 </div>
 
                 <button type="submit" class="w-full bg-blue-600 p-4 rounded-2xl font-bold hover:bg-blue-700 transition active:scale-95 shadow-lg shadow-blue-900/40">🔍 Buscar Menor Preço</button>
             </form>
 
-            <div class="space-y-4">${listaHTML}</div>
+            <div class="space-y-2">${listaHTML}</div>
         </div>
     </body>
     </html>`);
