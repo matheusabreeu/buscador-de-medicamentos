@@ -3,7 +3,7 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// Função para farmácias do Grupo VTEX (Extrafarma, Pague Menos, Globo)
+// Função para farmácias VTEX (Extrafarma, Pague Menos, Globo)
 async function buscarVTEX(medicamento, loja) {
     try {
         const dominios = {
@@ -14,14 +14,13 @@ async function buscarVTEX(medicamento, loja) {
         const termo = encodeURIComponent(medicamento);
         const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${termo}&_from=0&_to=49`;
         
-        const response = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        const response = await fetch(url, { signal: AbortSignal.timeout(12000) });
         if (!response.ok) return [];
         const produtos = await response.json();
 
         return produtos.map(p => {
             const item = p.items[0];
-            const seller = item.sellers[0].commertialOffer;
-            const preco = seller.Price;
+            const preco = item.sellers[0].commertialOffer.Price;
             if (!preco || preco <= 0) return null;
             return {
                 loja: loja,
@@ -31,68 +30,68 @@ async function buscarVTEX(medicamento, loja) {
                 link: p.link,
                 imagem: item.images[0]?.imageUrl || ''
             };
-        }).filter(item => item !== null);
-    } catch (error) { return []; }
+        }).filter(i => i !== null);
+    } catch (e) { return []; }
 }
 
-// Função DROGASIL (Estratégia de Mimetismo Avançado)
+// Função DROGASIL (Operação Camuflagem Total)
 async function buscarDrogasil(medicamento) {
     try {
         const termo = encodeURIComponent(medicamento);
-        // Usando a rota de API de catálogo que alimenta o data-testid="price" que você encontrou
         const url = `https://api-gateway-prod.raiadrogasil.com.br/search/v2/br/drogasil/search?term=${termo}&limit=50&sort_by=relevance%3Adesc`;
         
         const response = await fetch(url, { 
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'pt-BR,pt;q=0.9',
-                'x-api-key': 'vli7vS4Z6U2v', // Chave mestre de busca pública
+                'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'x-api-key': 'vli7vS4Z6U2v',
                 'Origin': 'https://www.drogasil.com.br',
-                'Referer': 'https://www.drogasil.com.br/',
+                'Referer': `https://www.drogasil.com.br/search?w=${termo}`,
+                'sec-ch-ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
                 'sec-fetch-dest': 'empty',
                 'sec-fetch-mode': 'cors',
                 'sec-fetch-site': 'same-site'
             },
-            signal: AbortSignal.timeout(20000) // Tempo maior para vencer a lentidão
+            signal: AbortSignal.timeout(15000)
         });
 
         if (!response.ok) return [];
         const data = await response.json();
-        const products = data.results?.products || [];
+        const products = data.results?.products || data.products || [];
 
         return products.map(p => {
-            const preco = p.valueTo;
+            const preco = p.valueTo || p.price?.valueTo;
             if (!preco) return null;
             return {
                 loja: 'Drogasil',
-                nome: p.name,
+                nome: p.name || p.productName,
                 preco: preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
                 valor: preco,
-                link: `https://www.drogasil.com.br/${p.urlKey}.html`,
-                imagem: p.image
+                link: p.urlKey ? `https://www.drogasil.com.br/${p.urlKey}.html` : '#',
+                imagem: p.image || p.thumbnail
             };
-        }).filter(item => item !== null);
-    } catch (error) { return []; }
+        }).filter(i => i !== null);
+    } catch (e) { return []; }
 }
 
 app.all('*', async (req, res) => {
     const remedio = req.body?.remedio || '';
-    let lojasSelecionadas = req.body?.lojas || ['Extrafarma', 'Pague Menos', 'Drogasil', 'Globo'];
-    if (!Array.isArray(lojasSelecionadas)) lojasSelecionadas = [lojasSelecionadas];
+    let selecionadas = req.body?.lojas || ['Extrafarma', 'Pague Menos', 'Drogasil', 'Globo'];
+    if (!Array.isArray(selecionadas)) selecionadas = [selecionadas];
 
     let resultados = [];
-    
     if (remedio) {
-        const buscas = [];
-        if (lojasSelecionadas.includes('Extrafarma')) buscas.push(buscarVTEX(remedio, 'Extrafarma'));
-        if (lojasSelecionadas.includes('Pague Menos')) buscas.push(buscarVTEX(remedio, 'Pague Menos'));
-        if (lojasSelecionadas.includes('Globo')) buscas.push(buscarVTEX(remedio, 'Globo'));
-        if (lojasSelecionadas.includes('Drogasil')) buscas.push(buscarDrogasil(remedio));
+        const acoes = [];
+        if (selecionadas.includes('Extrafarma')) acoes.push(buscarVTEX(remedio, 'Extrafarma'));
+        if (selecionadas.includes('Pague Menos')) acoes.push(buscarVTEX(remedio, 'Pague Menos'));
+        if (selecionadas.includes('Globo')) acoes.push(buscarVTEX(remedio, 'Globo'));
+        if (selecionadas.includes('Drogasil')) acoes.push(buscarDrogasil(remedio));
 
-        const tempResults = await Promise.all(buscas);
-        // ORDENAÇÃO ECONÔMICA: Prioridade total ao menor preço da lista unificada
-        resultados = tempResults.flat().sort((a, b) => a.valor - b.valor);
+        const resTotal = await Promise.all(acoes);
+        resultados = resTotal.flat().sort((a, b) => a.valor - b.valor);
     }
     
     res.send(`
@@ -102,36 +101,34 @@ app.all('*', async (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <script src="https://cdn.tailwindcss.com"></script>
-        <title>Buscador Abreu - Saúde & Economia</title>
+        <title>Buscador Abreu</title>
         <script>
-            function toggleTodas(m) {
-                document.getElementsByName('lojas').forEach(c => c.checked = m.checked);
-            }
+            function checkAll(m) { document.getElementsByName('lojas').forEach(c => c.checked = m.checked); }
         </script>
     </head>
     <body class="bg-slate-950 text-white p-4 font-sans">
         <div class="max-w-md mx-auto">
             <header class="text-center py-6">
                 <h1 class="text-3xl font-bold text-blue-500 italic">Buscador Abreu 💊</h1>
-                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1">Sargento F Abreu | Economia UFMA</p>
+                <p class="text-slate-500 text-[10px] uppercase tracking-widest mt-1 italic">Sargento F Abreu | Economia UFMA</p>
             </header>
 
-            <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-8">
-                <input type="text" name="remedio" value="${remedio}" placeholder="Nome do remédio..." required
+            <form method="POST" action="/" class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-2xl mb-6">
+                <input type="text" name="remedio" value="${remedio}" placeholder="Qual o remédio?" required
                        class="w-full bg-slate-800 p-4 rounded-2xl mb-4 outline-none border border-transparent focus:border-blue-500 transition text-white">
                 
                 <div class="mb-6 bg-slate-950/50 p-4 rounded-2xl border border-slate-800">
                     <div class="flex justify-between items-center mb-4">
-                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Onde pesquisar?</span>
+                        <span class="text-[10px] font-black text-slate-500 uppercase tracking-tighter">Filtro de Redes</span>
                         <label class="flex items-center gap-1 text-[10px] font-bold text-blue-400 cursor-pointer">
-                            <input type="checkbox" onclick="toggleTodas(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
-                            TODAS
+                            <input type="checkbox" onclick="checkAll(this)" checked class="rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
+                            MARCAR TODAS
                         </label>
                     </div>
                     <div class="grid grid-cols-2 gap-y-3">
                         ${['Extrafarma', 'Pague Menos', 'Drogasil', 'Globo'].map(l => `
                             <label class="flex items-center gap-2 text-xs cursor-pointer">
-                                <input type="checkbox" name="lojas" value="${l}" ${lojasSelecionadas.includes(l) ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600">
+                                <input type="checkbox" name="lojas" value="${l}" ${selecionadas.includes(l) ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600">
                                 ${l}
                             </label>
                         `).join('')}
@@ -159,7 +156,7 @@ app.all('*', async (req, res) => {
                         </div>
                     </div>
                 `).join('')}
-                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic">Nenhum resultado encontrado. Tente novamente em alguns segundos.</div>' : ''}
+                ${remedio && resultados.length === 0 ? '<div class="text-center p-10 text-slate-600 text-sm italic">O servidor da farmácia demorou a responder. Tente pesquisar novamente.</div>' : ''}
             </div>
         </div>
     </body>
