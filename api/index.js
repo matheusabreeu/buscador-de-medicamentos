@@ -10,6 +10,7 @@ const meliuzSlugs = {
     'Ultrafarma': 'ultrafarma'
 };
 
+// Função para capturar cashback real do Méliuz
 async function obterCashbackReal(loja) {
     const slug = meliuzSlugs[loja];
     if (!slug) return { pct: 0, label: '0%', link: '#' };
@@ -51,7 +52,7 @@ async function buscarFarmacia(medicamento, loja) {
             const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
             const html = await res.text();
             
-            // Regex específica para o padrão data-product do Sargento
+            // Regex baseada no HTML data-product fornecido
             const regexProd = /data-product-id="([^"]+)" data-product-name="([^"]+)"[^>]+data-product-price="([^"]+)"/g;
             let match;
             const prods = [];
@@ -172,17 +173,17 @@ app.all('*', async (req, res) => {
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Ultrafarma" ${selecionadas.includes('Ultrafarma') ? 'checked' : ''} class="rounded border-white/10 text-emerald-500"> Ultrafarma</label>
                         <div class="flex flex-col opacity-40">
                            <label class="flex items-center gap-2 text-xs italic"><input type="checkbox" disabled class="rounded border-white/10"> Drogasil</label>
-                           <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-cyan-500 font-bold mt-1 underline uppercase">Busca Manual →</a>
+                           <a href="https://www.drogasil.com.br" target="_blank" class="text-[8px] text-cyan-500 font-bold mt-1 underline uppercase italic">Busca Manual →</a>
                         </div>
                     </div>
                 </div>
-                <button type="submit" class="w-full bg-cyan-600 p-4 rounded-2xl font-black uppercase text-xs shadow-lg shadow-cyan-900/40 hover:bg-cyan-500 transition">🔍 Buscar Menor Preço</button>
+                <button type="submit" class="w-full bg-cyan-600 p-4 rounded-2xl font-black uppercase text-xs shadow-lg shadow-cyan-900/40 hover:bg-cyan-500 transition active:scale-95">🔍 Buscar Menor Preço</button>
             </form>
 
             <div class="space-y-2 mb-10">${listaHTML}</div>
 
             <div class="mt-12 pt-6 border-t border-white/10">
-                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-4 text-center">Painel de Cashback Méliuz</h4>
+                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-4 text-center">Ativar Cashback Méliuz</h4>
                 <div class="grid grid-cols-2 gap-2 mb-6">
                     <a href="${cEx.link}" target="_blank" class="bg-slate-900 p-3 rounded-2xl border border-white/5 text-center hover:bg-slate-800 transition">
                         <p class="text-[7px] text-slate-400 uppercase font-black">Extrafarma</p>
@@ -202,10 +203,10 @@ app.all('*', async (req, res) => {
                     </a>
                 </div>
                 <div class="bg-emerald-500/5 p-4 rounded-2xl border border-emerald-500/20 text-center">
-                    <p class="text-emerald-400 text-[10px] font-black uppercase mb-1">Como Ativar:</p>
-                    <p class="text-slate-400 text-[8px] uppercase font-bold leading-tight">1. Clique na rede acima para ativar o cashback. 2. Retorne aqui para realizar sua busca.</p>
+                    <p class="text-emerald-400 text-[10px] font-black uppercase mb-1 tracking-tighter">Instruções de Ativação:</p>
+                    <p class="text-slate-400 text-[8px] uppercase font-bold leading-tight">1. Clique na rede acima para ativar. 2. Retorne aqui e busque o medicamento.</p>
                 </div>
-                <p class="text-center text-[7px] text-slate-600 mt-6 italic uppercase tracking-widest font-bold">Drogaria Globo: Sem cashback ativo.</p>
+                <p class="text-center text-[7px] text-slate-600 mt-6 italic uppercase tracking-widest font-bold">Drogaria Globo: Sem cashback ativo no momento.</p>
             </div>
         </div>
     </body>
