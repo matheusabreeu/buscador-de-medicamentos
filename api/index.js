@@ -3,11 +3,11 @@ const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
-// CONFIGURAÇÃO DE CASHBACK MÉLIUZ ATUALIZADA
+// CONFIGURAÇÃO DE CASHBACK MÉLIUZ (Ajustado: Drogasil 3% conforme sua busca)
 const cashbackMeliuz = {
     'Extrafarma': { pct: 4, label: '4%', link: 'https://www.meliuz.com.br/desconto/extrafarma' },
     'Pague Menos': { pct: 8, label: '8%', link: 'https://www.meliuz.com.br/desconto/pague-menos' },
-    'Drogasil': { pct: 4, label: '4%', link: 'https://www.meliuz.com.br/desconto/drogasil' },
+    'Drogasil': { pct: 3, label: '3%', link: 'https://www.meliuz.com.br/desconto/drogasil' },
     'Globo': { pct: 0, label: 'Indisponível', link: '#' }
 };
 
@@ -120,24 +120,24 @@ app.all('*', async (req, res) => {
             </header>
 
             <div class="mb-6">
-                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-2 text-center">Cashback Méliuz Disponível</h4>
-                <div class="grid grid-cols-3 gap-2 mb-3">
-                    <a href="${cashbackMeliuz['Extrafarma'].link}" target="_blank" class="bg-blue-900/10 border border-blue-800/30 p-2 rounded-xl text-center hover:bg-blue-900/20 transition">
+                <h4 class="text-[9px] text-slate-500 font-black uppercase tracking-widest mb-2 text-center">Cashback Méliuz Ativo</h4>
+                <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+                    <a href="${cashbackMeliuz['Extrafarma'].link}" target="_blank" class="bg-blue-900/10 border border-blue-800/30 p-2 rounded-xl">
                         <p class="text-[7px] text-blue-400 font-bold uppercase">Extrafarma</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Extrafarma'].label}</p>
+                        <p class="text-xs font-black">${cashbackMeliuz['Extrafarma'].label}</p>
                     </a>
-                    <a href="${cashbackMeliuz['Pague Menos'].link}" target="_blank" class="bg-red-900/10 border border-red-800/30 p-2 rounded-xl text-center hover:bg-red-900/20 transition">
+                    <a href="${cashbackMeliuz['Pague Menos'].link}" target="_blank" class="bg-red-900/10 border border-red-800/30 p-2 rounded-xl">
                         <p class="text-[7px] text-red-400 font-bold uppercase">Pague Menos</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Pague Menos'].label}</p>
+                        <p class="text-xs font-black">${cashbackMeliuz['Pague Menos'].label}</p>
                     </a>
-                    <a href="${cashbackMeliuz['Drogasil'].link}" target="_blank" class="bg-green-900/10 border border-green-800/30 p-2 rounded-xl text-center hover:bg-green-900/20 transition">
+                    <a href="${cashbackMeliuz['Drogasil'].link}" target="_blank" class="bg-green-900/10 border border-green-800/30 p-2 rounded-xl">
                         <p class="text-[7px] text-green-400 font-bold uppercase">Drogasil</p>
-                        <p class="text-sm font-black text-white">${cashbackMeliuz['Drogasil'].label}</p>
+                        <p class="text-xs font-black">${cashbackMeliuz['Drogasil'].label}</p>
                     </a>
                 </div>
                 <div class="bg-slate-900/50 p-3 rounded-xl border border-slate-800 text-center">
-                    <p class="text-slate-400 text-[8px] leading-relaxed uppercase font-medium">
-                        <span class="text-yellow-500 font-black">Nota:</span> Atualmente, a <span class="text-white">Drogaria Globo</span> não possui cashback ativo.
+                    <p class="text-slate-400 text-[9px] leading-relaxed uppercase font-medium">
+                        <span class="text-yellow-500 font-black">Nota:</span> Atualmente, a <span class="text-white">Drogaria Globo</span> não possui cashback ativo. Clique nos botões acima para ativar o benefício antes de comprar.
                     </p>
                 </div>
             </div>
@@ -157,6 +157,7 @@ app.all('*', async (req, res) => {
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Extrafarma" ${selecionadas.includes('Extrafarma') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-blue-600"> Extrafarma</label>
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Pague Menos" ${selecionadas.includes('Pague Menos') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-red-600"> Pague Menos</label>
                         <label class="flex items-center gap-2 text-xs"><input type="checkbox" name="lojas" value="Globo" ${selecionadas.includes('Globo') ? 'checked' : ''} class="rounded border-slate-700 bg-slate-800 text-orange-500"> Globo</label>
+                        
                         <div class="flex flex-col">
                            <label class="flex items-center gap-2 text-xs opacity-40 cursor-not-allowed italic">
                                <input type="checkbox" disabled class="rounded border-slate-700 bg-slate-800"> Drogasil
