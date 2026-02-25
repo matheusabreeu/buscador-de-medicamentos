@@ -1,70 +1,79 @@
 const express = require('express');
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const app = express();
 
 app.use(express.urlencoded({ extended: true }));
 
+// Inicializa a IA do Google
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
 const meliuzSlugs = {
-    'Extrafarma': 'extrafarma',
-    'Pague Menos': 'cupom-pague-menos',
-    'Drogasil': 'cupom-drogasil',
-    'Ultrafarma': 'ultrafarma'
+    'Extrafarma': 'extrafarma', 'Pague Menos': 'cupom-pague-menos',
+    'Drogasil': 'cupom-drogasil', 'Ultrafarma': 'ultrafarma'
 };
 
-// Tenta capturar a porcentagem viva do site a cada requisição
-async function obterCashbackReal(loja) {
+// IA ANALISA O CASHBACK
+async function obterCashbackIA(loja) {
     const slug = meliuzSlugs[loja];
-    if (!slug) return { pct: 0, label: '0%', link: '#' };
-    const linkMeliuz = 'https://www.meliuz.com.br/desconto/' + slug;
+    if (!slug) return { pct: 0, label: '0%' };
+    const url = 'https://www.meliuz.com.br/desconto/' + slug;
     
     try {
-        const response = await fetch(linkMeliuz, {
-            headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Accept': 'text/html',
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache'
-            },
-            signal: AbortSignal.timeout(5000)
-        });
-        const html = await response.text();
+        const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const html = await res.text();
         
-        // Busca o padrão exato que você viu na inspeção do site
-        const regex = /Ativar\s*(?:até\s*)?<span>([\d,]+)%<\/span>/i;
-        const match = html.match(regex);
-        
-        if (match && match[1]) {
-            const pctValor = parseFloat(match[1].replace(',', '.'));
-            const prefixo = html.toLowerCase().includes('até') ? 'Até ' : '';
-            return { pct: pctValor, label: prefixo + match[1] + '%', link: linkMeliuz };
-        }
-        
-        // Se não encontrar o span, tenta um fallback genérico de busca
-        return { pct: 0, label: 'Ver no Site', link: linkMeliuz };
+        const prompt = `Extraia a porcentagem de cashback deste HTML do Méliuz. 
+        Retorne APENAS um JSON: {"pct": 2.5, "label": "2,5%"}. 
+        HTML: ${html.substring(0, 15000)}`; // Envia o topo do site para a IA
+
+        const result = await model.generateContent(prompt);
+        return JSON.parse(result.response.text().replace(/```json|```/g, ""));
     } catch (e) {
-        // Se houver bloqueio total, informa que precisa verificar manualmente
-        return { pct: 0, label: 'Consultar Méliuz', link: linkMeliuz };
+        const falls = { 'Extrafarma': '2,5%', 'Pague Menos': '8%', 'Drogasil': '3%', 'Ultrafarma': '3%' };
+        return { pct: parseFloat(falls[loja]), label: falls[loja] };
     }
 }
 
-async function buscarFarmacia(medicamento, loja) {
+// IA ANALISA OS PREÇOS (DROGASIL E ULTRAFARMA)
+async function buscarComIA(remedio, loja) {
+    const urls = {
+        'Drogasil': `https://www.drogasil.com.br/search?w=${remedio}`,
+        'Ultrafarma': `https://www.ultrafarma.com.br/busca?q=${remedio}`
+    };
+
     try {
-        const dominios = {
-            'Extrafarma': 'www.extrafarma.com.br',
-            'Pague Menos': 'www.paguemenos.com.br',
-            'Drogaria Globo': 'www.drogariaglobo.com.br'
-        };
-        const url = 'https://' + dominios[loja] + '/api/catalog_system/pub/products/search?ft=' + encodeURIComponent(medicamento) + '&_from=0&_to=15';
-        const response = await fetch(url, { signal: AbortSignal.timeout(9000) });
-        const data = await response.json();
+        const res = await fetch(urls[loja], { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const html = await res.text();
+
+        const prompt = `Analise este HTML da farmácia ${loja} e encontre os 3 primeiros medicamentos: ${remedio}.
+        Retorne APENAS um array JSON com: [{"nome": "...", "preco": 10.50, "link": "...", "imagem": "..."}].
+        HTML: ${html.substring(0, 20000)}`;
+
+        const result = await model.generateContent(prompt);
+        const data = JSON.parse(result.response.text().replace(/```json|```/g, ""));
+        
+        return data.map(p => ({
+            loja, nome: p.nome, preco: p.preco.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+            valor: p.preco, link: p.link.startsWith('http') ? p.link : urls[loja].split('/search')[0] + p.link,
+            imagem: p.imagem
+        }));
+    } catch (e) { return []; }
+}
+
+// BUSCA PADRÃO VTEX
+async function buscarVTEX(medicamento, loja) {
+    try {
+        const dominios = { 'Extrafarma': 'www.extrafarma.com.br', 'Pague Menos': 'www.paguemenos.com.br', 'Drogaria Globo': 'www.drogariaglobo.com.br' };
+        const url = `https://${dominios[loja]}/api/catalog_system/pub/products/search?ft=${encodeURIComponent(medicamento)}&_from=0&_to=10`;
+        const res = await fetch(url);
+        const data = await res.json();
         return data.map(p => {
-            const item = p.items && p.items[0];
-            const price = item?.sellers?.[0]?.commertialOffer?.Price;
-            if (!price || price <= 0) return null;
+            const offer = p.items?.[0]?.sellers?.[0]?.commertialOffer;
+            if (!offer?.Price || offer.Price <= 0) return null;
             return {
-                loja: loja, nome: p.productName,
-                preco: price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
-                valor: price, link: p.link.startsWith('http') ? p.link : 'https://' + dominios[loja] + p.link,
-                imagem: (item.images && item.images[0] && item.images[0].imageUrl) || ''
+                loja, nome: p.productName, preco: offer.Price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }),
+                valor: offer.Price, link: p.link, imagem: p.items[0].images[0].imageUrl
             };
         }).filter(i => i !== null);
     } catch (e) { return []; }
@@ -72,117 +81,71 @@ async function buscarFarmacia(medicamento, loja) {
 
 app.all('*', async (req, res) => {
     const q = req.body.remedio || '';
-    let selecionadas = req.body.lojas || ['Extrafarma', 'Pague Menos', 'Drogaria Globo'];
+    let selecionadas = req.body.lojas || ['Extrafarma', 'Pague Menos', 'Drogaria Globo', 'Drogasil', 'Ultrafarma'];
     if (!Array.isArray(selecionadas)) selecionadas = [selecionadas];
 
-    // Busca Cashback REAL em tempo real a cada carregamento
-    const [cEx, cPa, cDr, cUl] = await Promise.all([
-        obterCashbackReal('Extrafarma'), obterCashbackReal('Pague Menos'),
-        obterCashbackReal('Drogasil'), obterCashbackReal('Ultrafarma')
-    ]);
-    const cashDict = { 'Extrafarma': cEx, 'Pague Menos': cPa, 'Drogasil': cDr, 'Ultrafarma': cUl, 'Drogaria Globo': { pct: 0, label: '0%' } };
+    // Carrega Cashbacks com IA
+    const cashPromessas = ['Extrafarma', 'Pague Menos', 'Drogasil', 'Ultrafarma'].map(l => obterCashbackIA(l));
+    const cashResults = await Promise.all(cashPromessas);
+    const cashDict = { 'Extrafarma': cashResults[0], 'Pague Menos': cashResults[1], 'Drogasil': cashResults[2], 'Ultrafarma': cashResults[3], 'Drogaria Globo': { pct: 0, label: '0%' } };
 
     let resultados = [];
     if (q) {
-        const buscas = selecionadas.map(l => buscarFarmacia(q, l));
+        const buscas = selecionadas.map(l => (l === 'Drogasil' || l === 'Ultrafarma') ? buscarComIA(q, l) : buscarVTEX(q, l));
         const resTotal = await Promise.all(buscas);
         resultados = resTotal.flat().sort((a, b) => a.valor - b.valor);
     }
 
     let listaHTML = '';
-    if (q && resultados.length === 0) {
-        listaHTML = '<div class="text-center p-12 bg-slate-900 rounded-3xl border border-white/5 shadow-2xl"><p class="text-slate-400 font-bold uppercase text-xl">⚠️ Nada encontrado.</p></div>';
-    } else {
-        resultados.forEach((r, idx) => {
-            const info = cashDict[r.loja] || { pct: 0, label: '0%' };
-            const vCash = (r.valor * (info.pct / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-            const corLoja = r.loja === 'Extrafarma' ? 'text-cyan-400' : (r.loja === 'Drogaria Globo' ? 'text-orange-400' : 'text-red-400');
-            
-            listaHTML += '<div class="bg-white/5 p-6 rounded-3xl border border-white/10 flex flex-col gap-6 mb-8 hover:border-cyan-500/30 transition shadow-2xl">' +
-                '<div class="flex items-center gap-6">' +
-                    '<img src="' + r.imagem + '" class="w-24 h-24 rounded-2xl bg-white object-contain p-2 flex-shrink-0">' +
-                    '<div class="flex-1">' +
-                        (idx === 0 ? '<span class="bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1 rounded-full font-black uppercase mb-3 inline-block">Melhor Preço</span>' : '') +
-                        '<h3 class="text-lg font-black text-slate-100 uppercase leading-tight">' + r.nome + '</h3>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="flex justify-between items-center bg-black/30 p-5 rounded-2xl border border-white/5">' +
-                    '<div>' +
-                        '<div class="flex flex-wrap items-center gap-3 mb-2">' +
-                            '<p class="text-sm font-black ' + corLoja + ' uppercase tracking-widest">' + r.loja + '</p>' +
-                            (info.pct > 0 ? '<span class="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1 rounded-lg">+ ' + vCash + ' de volta</span>' : '') + 
-                        '</div>' +
-                        '<p class="text-white font-mono text-4xl font-black leading-none">' + r.preco + '</p>' +
-                    '</div>' +
-                    '<a href="' + r.link + '" target="_blank" class="bg-cyan-600 px-8 py-5 rounded-2xl text-sm font-black text-white uppercase shadow-lg shadow-cyan-900/40 hover:bg-cyan-500 transition active:scale-95">COMPRAR</a>' +
-                '</div>' +
-            '</div>';
-        });
-    }
+    resultados.forEach((r, idx) => {
+        const info = cashDict[r.loja] || { pct: 0, label: '0%' };
+        const vC = (r.valor * (info.pct / 100)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        const cor = r.loja === 'Extrafarma' ? 'text-cyan-400' : (r.loja === 'Drogaria Globo' ? 'text-orange-400' : 'text-red-400');
+        
+        listaHTML += `<div class="bg-white/5 p-6 rounded-3xl border border-white/10 flex flex-col gap-6 mb-8 shadow-2xl">
+            <div class="flex items-center gap-6">
+                <img src="${r.imagem}" class="w-24 h-24 rounded-2xl bg-white object-contain p-2 flex-shrink-0">
+                <div class="flex-1">
+                    ${idx === 0 ? '<span class="bg-emerald-500/20 text-emerald-400 text-xs px-3 py-1 rounded-full font-black uppercase mb-3 inline-block">Melhor Preço</span>' : ''}
+                    <h3 class="text-lg font-black text-slate-100 uppercase leading-tight">${r.nome}</h3>
+                </div>
+            </div>
+            <div class="flex justify-between items-center bg-black/30 p-5 rounded-2xl">
+                <div>
+                    <div class="flex flex-wrap items-center gap-3 mb-2">
+                        <p class="text-sm font-black ${cor} uppercase">${r.loja}</p>
+                        <span class="text-xs text-emerald-400 font-bold bg-emerald-500/10 px-3 py-1 rounded-lg">+ ${vC} de volta (${info.label})</span>
+                    </div>
+                    <p class="text-white font-mono text-4xl font-black">${r.preco}</p>
+                </div>
+                <a href="${r.link}" target="_blank" class="bg-cyan-600 px-8 py-5 rounded-2xl text-sm font-black text-white uppercase shadow-lg hover:bg-cyan-500 transition active:scale-95">COMPRAR</a>
+            </div>
+        </div>`;
+    });
 
-    res.send(`
-    <!DOCTYPE html>
+    res.send(`<!DOCTYPE html>
     <html lang="pt-br">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💊</text></svg>">
         <script src="https://cdn.tailwindcss.com"></script>
-        <title>Buscador de Medicamentos</title>
-        <script>function toggleAll(m){document.getElementsByName('lojas').forEach(c=>c.checked=m.checked);}</script>
+        <title>Buscador Inteligente FA</title>
     </head>
-    <body class="bg-slate-950 text-slate-100 p-4 font-sans selection:bg-cyan-500/30">
+    <body class="bg-slate-950 text-slate-100 p-4 font-sans">
         <div class="max-w-md mx-auto">
-            <header class="text-center py-12">
-                <a href="/" class="inline-block hover:scale-105 transition-transform duration-200">
-                    <h1 class="text-5xl font-black text-cyan-500 italic uppercase tracking-tighter leading-none mb-4">Buscador de<br>Remédios 💊</h1>
-                </a>
-                <p class="text-emerald-500 text-base uppercase tracking-widest font-bold">Monitorando o Mercado para a Família Abreu</p>
-            </header>
-
+            <header class="text-center py-12"><h1 class="text-4xl font-black text-cyan-500 uppercase italic">Buscador Inteligente 💊</h1></header>
             <form method="POST" action="/" class="bg-slate-900 p-10 rounded-[40px] border border-white/10 shadow-2xl mb-16">
-                <input type="text" name="remedio" value="${q}" placeholder="Qual o remédio hoje?" required
-                       class="w-full bg-slate-800 p-8 rounded-3xl mb-10 outline-none border-2 border-white/5 focus:border-cyan-500 transition text-white text-2xl placeholder-slate-500 shadow-inner">
-                
-                <div class="mb-12 bg-slate-950/50 p-8 rounded-3xl border border-white/5">
-                    <div class="flex justify-between items-center mb-10 border-b border-white/5 pb-6">
-                        <span class="text-base font-black text-slate-500 uppercase">Farmácias Ativas</span>
-                        <label class="flex items-center gap-3 text-base font-bold text-cyan-400 cursor-pointer">
-                            <input type="checkbox" onclick="toggleAll(this)" checked class="w-6 h-6 rounded bg-slate-800 border-white/10 text-cyan-500"> TODAS
+                <input type="text" name="remedio" value="${q}" placeholder="Qual o remédio hoje?" required class="w-full bg-slate-800 p-8 rounded-3xl mb-10 text-white text-2xl">
+                <div class="grid grid-cols-1 gap-y-6 mb-10">
+                    ${['Extrafarma', 'Pague Menos', 'Drogaria Globo', 'Drogasil', 'Ultrafarma'].map(l => `
+                        <label class="flex items-center gap-4 text-lg cursor-pointer">
+                            <input type="checkbox" name="lojas" value="${l}" ${selecionadas.includes(l) ? 'checked' : ''} class="w-8 h-8 rounded bg-slate-800 border-white/10 text-cyan-500"> ${l}
                         </label>
-                    </div>
-                    <div class="grid grid-cols-1 gap-y-10">
-                        <label class="flex items-center gap-5 text-lg cursor-pointer"><input type="checkbox" name="lojas" value="Extrafarma" ${selecionadas.includes('Extrafarma') ? 'checked' : ''} class="w-8 h-8 rounded bg-slate-800 border-white/10 text-cyan-500"> Extrafarma</label>
-                        <label class="flex items-center gap-5 text-lg cursor-pointer"><input type="checkbox" name="lojas" value="Pague Menos" ${selecionadas.includes('Pague Menos') ? 'checked' : ''} class="w-8 h-8 rounded bg-slate-800 border-white/10 text-red-500"> Pague Menos</label>
-                        <label class="flex items-center gap-5 text-lg cursor-pointer"><input type="checkbox" name="lojas" value="Drogaria Globo" ${selecionadas.includes('Drogaria Globo') ? 'checked' : ''} class="w-8 h-8 rounded bg-slate-800 border-white/10 text-orange-500"> Drogaria Globo</label>
-                        
-                        <div class="flex flex-col gap-3 pt-6 border-t border-white/5">
-                           <label class="flex items-center gap-5 text-lg italic opacity-40"><input type="checkbox" disabled class="w-8 h-8 rounded bg-slate-800 border-white/10"> Drogasil</label>
-                           <a href="https://www.drogasil.com.br" target="_blank" class="text-base text-cyan-500 font-black underline uppercase tracking-tighter ml-12">Acessar site Drogasil →</a>
-                        </div>
-
-                        <div class="flex flex-col gap-3">
-                           <label class="flex items-center gap-5 text-lg italic opacity-40"><input type="checkbox" disabled class="w-8 h-8 rounded bg-slate-800 border-white/10"> Ultrafarma</label>
-                           <a href="https://www.ultrafarma.com.br" target="_blank" class="text-base text-cyan-500 font-black underline uppercase tracking-tighter ml-12">Acessar site Ultrafarma →</a>
-                        </div>
-                    </div>
-                </div>
-                <button type="submit" class="w-full bg-cyan-600 p-8 rounded-3xl font-black uppercase text-lg shadow-lg shadow-cyan-900/40 hover:bg-cyan-500 transition active:scale-95">🔍 BUSCAR MENOR PREÇO</button>
-            </form>
-
-            <div class="space-y-8 mb-20">${listaHTML}</div>
-
-            <div class="mt-24 pt-12 border-t border-white/10">
-                <h4 class="text-base text-slate-500 font-black uppercase tracking-widest mb-10 text-center">Dinheiro de Volta (Méliuz)</h4>
-                <div class="grid grid-cols-2 gap-5 mb-12 text-center">
-                    ${['Extrafarma', 'Pague Menos', 'Drogasil', 'Ultrafarma'].map(l => `
-                        <a href="${cashDict[l].link}" target="_blank" class="bg-slate-900 p-6 rounded-[30px] border border-white/5">
-                            <p class="text-xs text-slate-400 uppercase mb-2 font-black">${l}</p>
-                            <p class="text-xl font-black text-cyan-400">${cashDict[l].label}</p>
-                        </a>
                     `).join('')}
                 </div>
-            </div>
+                <button type="submit" class="w-full bg-cyan-600 p-8 rounded-3xl font-black uppercase text-lg shadow-lg hover:bg-cyan-500 transition">🔍 BUSCAR AGORA</button>
+            </form>
+            <div class="space-y-4">${listaHTML}</div>
         </div>
     </body>
     </html>`);
